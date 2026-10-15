@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "raise_blast_radius_to"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approve", "request_changes", "escalate"] },
+    "summary": { "type": "string", "maxLength": 1200 },
+    "findings": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "category", "file", "line", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor", "nit"] },
+          "category": { "type": "string", "enum": ["architecture", "module_boundary", "tautological_test", "duplication", "schema_shortcut", "security", "scope_creep", "over_commenting", "correctness", "other"] },
+          "file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] },
+          "message": { "type": "string", "maxLength": 800 }
+        }
+      }
+    },
+    "raise_blast_radius_to": { "type": ["integer", "null"], "minimum": 1, "maximum": 4 }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "refine_migration_br4",
+  "stage": "refine",
+  "ticket": {"key": "GH-20", "title": "Orders table missing index causes timeouts", "body": "GET /orders times out for large accounts; the orders.account_id column has no index.", "source": "github", "repoFullName": "acme/widgets"},
+  "triage": {"classification": "bug", "summary": "Missing index", "confidence": 0.9, "already_fixed": false, "duplicate_of_external_id": null, "reason": "perf bug"},
+  "recorded": [
+    {"model": "gpt-5-mini", "content": "{\"problem\":\"GET /orders times out for accounts with many orders because orders.account_id is unindexed.\",\"repro_steps\":[\"Seed an account with 200k orders\",\"Call GET /orders\"],\"acceptance_criteria\":[\"GET /orders p95 < 300ms for 200k orders\",\"Migration adds an index on orders.account_id concurrently\"],\"out_of_scope\":[\"Query rewrite\"],\"reproduced\":true,\"blast_radius\":4,\"blast_radius_justification\":\"Requires a database migration.\",\"priority\":\"P1\",\"size\":\"S\",\"confidence\":0.85,\"likely_files\":[\"db/migrations/\"]}", "usage": {"inputTokens": 1400, "outputTokens": 220}}
+  ],
+  "expect": {"blastRadiusMin": 4, "priority": "P1", "calls": 1}
+}

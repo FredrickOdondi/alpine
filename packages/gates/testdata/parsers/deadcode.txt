@@ -1,0 +1,2 @@
+util/strings.go:7:6: unreachable func: Reverse
+util/strings.go:16:6: unreachable func: PadLeft

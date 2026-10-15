@@ -1,0 +1,9 @@
+{
+  "name": "triage_bug_login",
+  "stage": "triage",
+  "ticket": {"key": "GH-12", "title": "Login button does nothing on Safari", "body": "Clicking 'Sign in' on Safari 18 does nothing. Console: TypeError: undefined is not an object (evaluating 'e.provider.id').", "source": "github", "repoFullName": "acme/widgets"},
+  "recorded": [
+    {"model": "gpt-5-mini", "content": "{\"classification\":\"bug\",\"summary\":\"Sign-in button is a no-op on Safari 18 due to a TypeError.\",\"confidence\":0.93,\"already_fixed\":false,\"duplicate_of_external_id\":null,\"reason\":\"Concrete broken behaviour with a stack trace.\"}", "usage": {"inputTokens": 612, "outputTokens": 64, "cachedTokens": 0}}
+  ],
+  "expect": {"classification": "bug", "calls": 1}
+}

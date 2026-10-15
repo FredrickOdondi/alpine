@@ -1,0 +1,10 @@
+{
+  "name": "prioritize_policy_overrides_br4",
+  "stage": "prioritize",
+  "ticket": {"key": "GH-20", "title": "Orders table missing index", "body": "", "source": "github", "repoFullName": "acme/widgets"},
+  "refine": {"problem": "missing index", "repro_steps": [], "acceptance_criteria": ["index added"], "out_of_scope": [], "reproduced": true, "blast_radius": 4, "blast_radius_justification": "migration", "priority": "P1", "size": "S", "confidence": 0.85, "likely_files": []},
+  "recorded": [
+    {"model": "gpt-5-nano", "content": "{\"decision\":\"ready\",\"reason\":\"Clear and small.\",\"needs_product_decision\":false,\"architecture_changing\":false}", "usage": {"inputTokens": 700, "outputTokens": 30}}
+  ],
+  "expect": {"decision": "needs_human", "reasonContains": "BR4", "calls": 1}
+}

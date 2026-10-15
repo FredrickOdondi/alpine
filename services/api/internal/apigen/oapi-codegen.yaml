@@ -1,0 +1,10 @@
+# Generates Go types + a chi server interface from api/openapi.yaml.
+# Regenerate: `make gen` (or `go generate ./internal/apigen`).
+package: apigen
+output: apigen.gen.go
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: false
+output-options:
+  skip-prune: true

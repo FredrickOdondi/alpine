@@ -1,0 +1,23 @@
+# LiteLLM proxy: OpenAI is the only provider for now. Model names are what Alpine's per-stage
+# chains reference (LLM_MODELS_<STAGE>). BYO keys: the gateway sends the org's own OpenAI key per
+# request (`api_key` in the body), allowed by configurable_clientside_auth_params.
+model_list:
+  - model_name: gpt-5
+    litellm_params: { model: openai/gpt-5, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+  - model_name: gpt-5-mini
+    litellm_params: { model: openai/gpt-5-mini, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+  - model_name: gpt-5-nano
+    litellm_params: { model: openai/gpt-5-nano, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+  - model_name: gpt-4.1
+    litellm_params: { model: openai/gpt-4.1, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+  - model_name: gpt-4.1-mini
+    litellm_params: { model: openai/gpt-4.1-mini, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+  - model_name: o3
+    litellm_params: { model: openai/o3, api_key: os.environ/OPENAI_API_KEY, configurable_clientside_auth_params: ["api_key"] }
+litellm_settings:
+  # Retries/fallbacks/rate limits live in the Go gateway (per org, per stage); keep the proxy thin.
+  num_retries: 0
+  drop_params: true
+  cache: false            # never share caches across tenants
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

@@ -1,0 +1,1858 @@
+openapi: 3.0.3
+info:
+  title: Alpine API
+  version: 0.1.0
+  description: |
+    Public REST API for Alpine, the agentic software factory.
+
+    * Spec-first: Go server types/handlers are generated with oapi-codegen
+      (`services/api/internal/apigen`), the TypeScript client with openapi-typescript
+      (`packages/api-client`). Run `make gen` after editing this file.
+    * Auth (browser): an HTTP-only, Secure, SameSite=Lax server-side session cookie
+      (`alpine_session`; `__Host-alpine_session` in production) obtained via **Sign in with
+      Google** (OIDC + PKCE + nonce, primary), **GitHub OAuth** (PKCE), an optional **email magic
+      link**, or the dev-only login (`AUTH_DEV_LOGIN=true`). Accounts are linked by verified
+      email. Sessions live in Redis and are rotated on every login.
+    * CSRF: every state-changing request made with the session cookie must send the session's
+      token in `X-CSRF-Token` (get it from `GET /v1/auth/csrf` or `GET /v1/me`), and its `Origin`
+      must be an allowed SPA origin. API-key requests are exempt.
+    * Auth (programmatic): per-org API keys, `Authorization: Bearer alp_<prefix>_<secret>`;
+      scoped, optionally expiring, revocable. Keys never act as owner.
+    * Authorization: RBAC roles owner > admin > factory_owner > member > viewer (see
+      `role_permissions`). `/v1/orgs/{orgId}/…` routes check the caller's membership in that org.
+    * Tenancy: every `/v1` resource is scoped to an org; Postgres RLS enforces it (`app.org_id`
+      is set per transaction).
+    * Rate limits: `/v1/auth/*` is rate limited per IP; repeated failures (bad magic links, bad
+      API keys, failed callbacks) trigger exponential lockout. 429 responses carry `Retry-After`.
+    * Live updates: `GET /v1/events` is a Server-Sent Events stream of `BoardEvent`s.
+servers:
+  - url: http://localhost:8080
+    description: Local dev API
+tags:
+  - name: health
+  - name: auth
+  - name: orgs
+  - name: members
+  - name: apiKeys
+  - name: audit
+  - name: repos
+  - name: tickets
+  - name: runs
+  - name: pullRequests
+  - name: metrics
+  - name: events
+  - name: webhooks
+security:
+  - cookieAuth: []
+  - apiKeyAuth: []
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getHealthz
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /readyz:
+    get:
+      tags: [health]
+      operationId: getReadyz
+      summary: Readiness probe (Postgres, Redis, Temporal)
+      security: []
+      responses:
+        "200":
+          description: All dependencies reachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: At least one dependency is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /v1/auth/providers:
+    get:
+      tags: [auth]
+      operationId: getAuthProviders
+      summary: Which login methods are enabled
+      security: []
+      responses:
+        "200":
+          description: Enabled providers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthProviders" }
+  /v1/auth/google/login:
+    get:
+      tags: [auth]
+      operationId: startGoogleLogin
+      summary: Start Sign in with Google (OIDC; redirects to accounts.google.com)
+      description: |
+        Generates state, nonce and a PKCE verifier (stored server-side for 10 minutes), sets the
+        `alpine_oauth_state` binding cookie and redirects to Google. With `link=true` and a
+        session, the Google identity is linked to the current user instead of logging in.
+      security: []
+      parameters:
+        - name: redirect_to
+          in: query
+          required: false
+          description: SPA path to return to after login (must start with "/").
+          schema: { type: string }
+        - $ref: "#/components/parameters/LinkIdentity"
+      responses:
+        "302":
+          description: Redirect to Google's authorization endpoint
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Google login is not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/auth/google/callback:
+    get:
+      tags: [auth]
+      operationId: googleCallback
+      summary: Google OIDC callback
+      description: |
+        Verifies state (cookie-bound, single use), exchanges the code with the PKCE verifier,
+        verifies the ID token (signature via JWKS, iss, aud, exp, nonce), requires
+        `email_verified`, enforces the hosted-domain allowlist on the `hd` claim, links or creates
+        the account, rotates the session and redirects into the SPA.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "302":
+          description: Session cookie set; redirect into the SPA (or to /login?error=… on failure)
+  /v1/auth/github/login:
+    get:
+      tags: [auth]
+      operationId: startGithubLogin
+      summary: Start GitHub OAuth (redirects to github.com)
+      security: []
+      parameters:
+        - name: redirect_to
+          in: query
+          required: false
+          description: SPA path to return to after login (must start with "/").
+          schema: { type: string }
+        - $ref: "#/components/parameters/LinkIdentity"
+      responses:
+        "302":
+          description: Redirect to GitHub authorize URL (sets a short-lived state cookie)
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: GitHub OAuth is not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/auth/github/callback:
+    get:
+      tags: [auth]
+      operationId: githubCallback
+      summary: GitHub OAuth callback
+      description: |
+        Verifies the state against the state-binding cookie, exchanges the code with the PKCE
+        verifier, fetches the user's VERIFIED emails, links or creates the account, rotates the
+        session and redirects into the SPA. Failures redirect to `${APP_URL}/login?error=<code>`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "302":
+          description: Session cookie set; redirect into the SPA (or to /login?error=… on failure)
+  /v1/auth/dev-login:
+    post:
+      tags: [auth]
+      operationId: devLogin
+      summary: Dev-only login as the seeded dev user (AUTH_DEV_LOGIN=true)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Session cookie set
+        "404":
+          description: Dev login disabled or dev user not seeded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/auth/magic-link:
+    post:
+      tags: [auth]
+      operationId: requestMagicLink
+      summary: Email a one-time sign-in link (AUTH_MAGIC_LINK_ENABLED=true)
+      description: |
+        Always answers 202 for well-formed input (no account enumeration). The emailed link
+        points at the SPA (`/auth/magic-link#token=…`, token in the fragment); the SPA then calls
+        `POST /v1/auth/magic-link/verify`. Links are single-use and expire after 15 minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MagicLinkRequest" }
+      responses:
+        "202":
+          description: If the address may sign in, a link was sent
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Magic link login is disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/auth/magic-link/verify:
+    post:
+      tags: [auth]
+      operationId: verifyMagicLink
+      summary: Exchange a magic-link token for a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200":
+          description: Session cookie set (rotated)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/auth/csrf:
+    get:
+      tags: [auth]
+      operationId: getCsrfToken
+      summary: CSRF token for the current session (send it as X-CSRF-Token)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CsrfToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the current session and clear the cookie
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Logged out
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/auth/logout-all:
+    post:
+      tags: [auth]
+      operationId: logoutAll
+      summary: Revoke every session of the current user (log out everywhere)
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "200":
+          description: Sessions revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutAllResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Current user, active org, memberships and the CSRF token
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/me/identities:
+    get:
+      tags: [auth]
+      operationId: listMyIdentities
+      summary: Login methods linked to the current user
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Identities
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/me/active-org:
+    put:
+      tags: [auth]
+      operationId: setActiveOrg
+      summary: Switch the session's active org
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetActiveOrgRequest" }
+      responses:
+        "204":
+          description: Active org switched (session cookie re-issued)
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/orgs:
+    get:
+      tags: [orgs]
+      operationId: listOrgs
+      summary: Orgs the current user belongs to
+      responses:
+        "200":
+          description: Memberships
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrgMembership" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [orgs]
+      operationId: createOrg
+      summary: Create an org (workspace); the caller becomes its owner
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrgRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Org" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/orgs/{orgId}:
+    get:
+      tags: [orgs]
+      operationId: getOrg
+      summary: Get an org the user belongs to
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Org
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Org" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [orgs]
+      operationId: updateOrg
+      summary: Rename an org (org:update — owner, admin)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrgRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Org" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [orgs]
+      operationId: deleteOrg
+      summary: Soft-delete an org (org:delete — owner only)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Deleted (purged after the retention window)
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/orgs/{orgId}/members:
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: List org members (members:read)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Member" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/orgs/{orgId}/members/{userId}:
+    patch:
+      tags: [members]
+      operationId: updateMember
+      summary: Change a member's role (members:update; cannot exceed or touch a higher role)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMemberRequest" }
+      responses:
+        "200":
+          description: Updated membership
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Would leave the org without an owner
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [members]
+      operationId: removeMember
+      summary: Remove a member (members:remove), or leave the org (own user id)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Removed
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Would leave the org without an owner
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/orgs/{orgId}/invitations:
+    get:
+      tags: [members]
+      operationId: listInvitations
+      summary: List invitations (members:invite)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, all], default: pending }
+      responses:
+        "200":
+          description: Invitations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invitation" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [members]
+      operationId: createInvitation
+      summary: Invite someone by email (members:invite); supersedes a pending invite to the same email
+      description: |
+        Emails a link to `${APP_URL}/invitations/accept#token=…`. Only SHA-256(token) is stored.
+        Invitations expire (default 7 days). Admins cannot invite owners.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateInvitationRequest" }
+      responses:
+        "201":
+          description: Invitation created and emailed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invitation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/orgs/{orgId}/invitations/{invitationId}:
+    delete:
+      tags: [members]
+      operationId: revokeInvitation
+      summary: Revoke a pending invitation (members:invite)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/InvitationId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Revoked
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/invitations/accept:
+    post:
+      tags: [members]
+      operationId: acceptInvitation
+      summary: Accept an invitation (the signed-in user's verified email must match)
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgMembership" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Invitation was sent to a different email
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: Invitation expired, revoked or already used
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/orgs/{orgId}/api-keys:
+    get:
+      tags: [apiKeys]
+      operationId: listApiKeys
+      summary: List API keys (api_keys:read); secrets are never returned
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ApiKey" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [apiKeys]
+      operationId: createApiKey
+      summary: Create an API key (api_keys:manage, session only); the token is shown once
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateApiKeyRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/orgs/{orgId}/api-keys/{keyId}:
+    delete:
+      tags: [apiKeys]
+      operationId: revokeApiKey
+      summary: Revoke an API key (api_keys:manage)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/KeyId"
+        - $ref: "#/components/parameters/CsrfHeader"
+      responses:
+        "204":
+          description: Revoked
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/orgs/{orgId}/audit-log:
+    get:
+      tags: [audit]
+      operationId: listAuditLog
+      summary: Org audit log, newest first (audit:read)
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - name: action
+          in: query
+          required: false
+          schema: { type: string, example: member.role_changed }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page's nextCursor.
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditLogPage" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/repos:
+    get:
+      tags: [repos]
+      operationId: listRepos
+      summary: Repos connected to the active org (via GitHub App installations)
+      responses:
+        "200":
+          description: Repos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Repo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/repos/{repoId}/config:
+    get:
+      tags: [repos]
+      operationId: getRepoConfig
+      summary: The repo's .alpine/factory.yaml as read from the default branch, with validation
+      parameters:
+        - $ref: "#/components/parameters/RepoId"
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FactoryConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/tickets:
+    get:
+      tags: [tickets]
+      operationId: listTickets
+      summary: Tickets for the pipeline board
+      parameters:
+        - { name: repoId, in: query, required: false, schema: { type: string, format: uuid } }
+        - name: stage
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Stage" }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        "200":
+          description: Tickets ordered by most recently updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TicketSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/tickets/{ticketId}:
+    get:
+      tags: [tickets]
+      operationId: getTicket
+      summary: Ticket detail with stage history, runs and PRs
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/tickets/{ticketId}/actions:
+    post:
+      tags: [tickets]
+      operationId: postTicketAction
+      summary: Human decision on a ticket (signals the Temporal workflow)
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketActionRequest" }
+      responses:
+        "202":
+          description: Signal delivered to the ticket workflow
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Ticket has no running workflow
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/tickets/{ticketId}/runs:
+    get:
+      tags: [runs]
+      operationId: listTicketRuns
+      summary: Agent runs for a ticket (oldest first)
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AgentRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/tickets/{ticketId}/gate-results:
+    get:
+      tags: [runs]
+      operationId: listTicketGateResults
+      summary: Gate results for a ticket, by iteration
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+        - { name: runId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Gate results ordered by iteration, gate
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/GateResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/tickets/{ticketId}/artifacts:
+    get:
+      tags: [tickets]
+      operationId: listTicketArtifacts
+      summary: Repro evidence for a ticket (video, screenshots, traces, logs, visual diffs)
+      description: URLs are short-lived signed URLs to object storage.
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: Artifacts, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Artifact" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/tickets/{ticketId}/review:
+    get:
+      tags: [tickets]
+      operationId: getTicketReview
+      summary: Latest independent reviewer verdict and findings
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: Latest review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/runs/{runId}/turns:
+    get:
+      tags: [runs]
+      operationId: listRunTurns
+      summary: Agent turns within a run
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Turns ordered by n
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AgentTurn" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/pull-requests:
+    get:
+      tags: [pullRequests]
+      operationId: listPullRequests
+      summary: PR inbox sorted by blast radius desc, then priority, then age
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/PullRequestState" }
+      responses:
+        "200":
+          description: Pull requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PullRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/pull-requests/{pullRequestId}/evidence:
+    get:
+      tags: [pullRequests]
+      operationId: getPullRequestEvidence
+      summary: What the PR inbox shows when a row expands (diff, gates, review, visual diffs)
+      parameters:
+        - $ref: "#/components/parameters/PullRequestId"
+      responses:
+        "200":
+          description: Evidence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PullRequestEvidence" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/pull-requests/{pullRequestId}/review:
+    post:
+      tags: [pullRequests]
+      operationId: reviewPullRequest
+      summary: Human approve / send back. Recorded on the PR and mirrored to a GitHub review.
+      parameters:
+        - $ref: "#/components/parameters/PullRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PullRequestReviewRequest" }
+      responses:
+        "200":
+          description: Updated evidence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PullRequestEvidence" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/metrics:
+    get:
+      tags: [metrics]
+      operationId: getMetrics
+      summary: Factory metrics (throughput, turns, cost, gate pass rate, escalations)
+      parameters:
+        - name: window
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/MetricsWindow" }
+        - { name: repoId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Metrics for the window
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Metrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/events:
+    get:
+      tags: [events]
+      operationId: streamEvents
+      summary: Live board updates (Server-Sent Events)
+      description: |
+        `text/event-stream`. Each event has `event: <BoardEvent.type>` and `data: <BoardEvent JSON>`.
+        A `: ping` comment is sent every 15s. Clients should invalidate ticket queries on events.
+      parameters:
+        - { name: repoId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/BoardEvent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/webhooks/github:
+    post:
+      tags: [webhooks]
+      operationId: receiveGithubWebhook
+      summary: GitHub App webhook receiver
+      description: |
+        Verifies `X-Hub-Signature-256` (HMAC-SHA256 with GITHUB_WEBHOOK_SECRET), writes an idempotent
+        row to `inbox_events` (unique on source + delivery id) and returns fast. The inbox processor
+        turns `issues.opened` into a ticket and starts its Temporal workflow.
+      security: []
+      parameters:
+        - { name: X-GitHub-Event, in: header, required: true, schema: { type: string } }
+        - { name: X-GitHub-Delivery, in: header, required: true, schema: { type: string } }
+        - { name: X-Hub-Signature-256, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "202":
+          description: Accepted into the inbox (or ignored)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Signature missing or invalid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: Body larger than 25 MB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/webhooks/sentry:
+    post:
+      tags: [webhooks]
+      operationId: receiveSentryWebhook
+      summary: Sentry integration webhook receiver
+      description: |
+        Verifies `Sentry-Hook-Signature` (HMAC-SHA256 of the body with the Sentry integration client
+        secret), dedupes on the `Request-ID` header (unique on source + delivery id; Sentry has no
+        replay window) and writes to `inbox_events`. Body limit 5 MB. The org is resolved from the
+        Sentry installation; the inbox processor maps the Sentry project to a repo.
+      security: []
+      parameters:
+        - { name: Sentry-Hook-Resource, in: header, required: true, schema: { type: string } }
+        - { name: Request-ID, in: header, required: true, schema: { type: string } }
+        - { name: Sentry-Hook-Signature, in: header, required: true, schema: { type: string } }
+        - { name: Sentry-Hook-Timestamp, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "202":
+          description: Accepted into the inbox (or ignored)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookAck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Signature missing or invalid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: Body larger than 5 MB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: alpine_session
+      description: Server-side session id (HttpOnly). Production uses the `__Host-alpine_session` name.
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: alp_<prefix>_<secret>
+      description: Per-org API key for CI/webhooks. Scoped; never valid for creating keys.
+  parameters:
+    CsrfHeader:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: Required when authenticating with the session cookie (from GET /v1/auth/csrf or /v1/me).
+      schema: { type: string }
+    LinkIdentity:
+      name: link
+      in: query
+      required: false
+      description: With a session, link this provider to the current user instead of logging in.
+      schema: { type: boolean, default: false }
+    OAuthCode:
+      name: code
+      in: query
+      required: false
+      schema: { type: string }
+    OAuthState:
+      name: state
+      in: query
+      required: false
+      schema: { type: string }
+    OAuthError:
+      name: error
+      in: query
+      required: false
+      description: Set by the provider when the user cancels or consent fails.
+      schema: { type: string }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    KeyId:
+      name: keyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RepoId:
+      name: repoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PullRequestId:
+      name: pullRequestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No or invalid session
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not allowed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found (or not visible to this tenant)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicts with existing state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limited or temporarily locked out (see Retry-After)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: not_found }
+        message: { type: string }
+    Health:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        checks:
+          type: object
+          additionalProperties: { type: string }
+          example: { postgres: ok, redis: ok, temporal: ok }
+    AuthProviders:
+      type: object
+      required: [google, github, magicLink, devLogin]
+      properties:
+        google: { type: boolean, description: Sign in with Google configured (primary) }
+        github: { type: boolean, description: GitHub OAuth configured }
+        magicLink: { type: boolean, description: Email magic link enabled }
+        devLogin: { type: boolean, description: Dev-only login enabled }
+    Role:
+      type: string
+      enum: [owner, admin, factory_owner, member, viewer]
+    User:
+      type: object
+      required: [id, githubLogin]
+      properties:
+        id: { type: string, format: uuid }
+        githubLogin: { type: string, nullable: true, description: Null for users without a linked GitHub account }
+        name: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        avatarUrl: { type: string, nullable: true }
+    Org:
+      type: object
+      required: [id, slug, name, plan]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        plan: { type: string, enum: [starter, team, business, enterprise] }
+    OrgMembership:
+      type: object
+      required: [org, role]
+      properties:
+        org: { $ref: "#/components/schemas/Org" }
+        role: { $ref: "#/components/schemas/Role" }
+    Me:
+      type: object
+      required: [user, activeOrg, role, memberships, csrfToken, authMethod]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        activeOrg:
+          description: Null until the user creates or joins an org.
+          type: object
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Org" }]
+        role:
+          type: string
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Role" }]
+        memberships:
+          type: array
+          items: { $ref: "#/components/schemas/OrgMembership" }
+        csrfToken: { type: string, description: Send as X-CSRF-Token on state-changing requests }
+        authMethod: { type: string, enum: [google, github, email, dev, workos] }
+    SetActiveOrgRequest:
+      type: object
+      required: [orgId]
+      properties:
+        orgId: { type: string, format: uuid }
+    Repo:
+      type: object
+      required: [id, orgId, fullName, defaultBranch, githubInstallationId, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        orgId: { type: string, format: uuid }
+        fullName: { type: string, example: acme/widgets }
+        defaultBranch: { type: string, example: main }
+        githubInstallationId: { type: integer, format: int64 }
+        configSha: { type: string, nullable: true, description: Commit sha of the .alpine/factory.yaml in use }
+        createdAt: { type: string, format: date-time }
+    Stage:
+      type: string
+      description: Pipeline stage of a ticket (one Temporal workflow per ticket drives transitions).
+      enum:
+        - intake
+        - triage
+        - refinement
+        - prioritize
+        - needs_human
+        - implement
+        - gates
+        - review
+        - merge_policy
+        - pr_open
+        - done
+        - escalated
+        - closed
+        - duplicate
+    TicketType:
+      type: string
+      enum: [unknown, bug, feature, question, noise]
+    Priority:
+      type: string
+      enum: [P0, P1, P2, P3]
+    Size:
+      type: string
+      enum: [XS, S, M, L, XL]
+    BlastRadius:
+      type: integer
+      minimum: 1
+      maximum: 4
+      description: "1 leaf UI · 2 shared UI/design system · 3 API/service logic · 4 data/schema/infra"
+    Limits:
+      type: object
+      required: [maxTurns, maxGateIterations, maxCostUsd]
+      properties:
+        maxTurns: { type: integer, example: 100 }
+        maxGateIterations: { type: integer, example: 15 }
+        maxCostUsd: { type: number, format: double, example: 20 }
+    TicketSummary:
+      type: object
+      required: [id, orgId, repoId, repoFullName, key, title, type, stage, turnsUsed, gateIterations, costUsd, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        orgId: { type: string, format: uuid }
+        repoId: { type: string, format: uuid }
+        repoFullName: { type: string }
+        key: { type: string, example: GH-42 }
+        title: { type: string }
+        type: { $ref: "#/components/schemas/TicketType" }
+        stage: { $ref: "#/components/schemas/Stage" }
+        source: { type: string, enum: [github, sentry, slack, linear, jira, widget], example: github }
+        sourceUrl: { type: string, nullable: true }
+        priority: { $ref: "#/components/schemas/Priority" }
+        size: { $ref: "#/components/schemas/Size" }
+        brPredicted: { $ref: "#/components/schemas/BlastRadius" }
+        brFinal: { $ref: "#/components/schemas/BlastRadius" }
+        turnsUsed: { type: integer }
+        gateIterations: { type: integer }
+        costUsd: { type: number, format: double }
+        escalationReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TicketDetail:
+      allOf:
+        - $ref: "#/components/schemas/TicketSummary"
+        - type: object
+          required: [body, limits, stageHistory, runs, pullRequests]
+          properties:
+            body: { type: string }
+            confidence: { type: number, format: double, nullable: true }
+            workflowId: { type: string, nullable: true }
+            limits: { $ref: "#/components/schemas/Limits" }
+            stageHistory:
+              type: array
+              items: { $ref: "#/components/schemas/StageTransition" }
+            runs:
+              type: array
+              items: { $ref: "#/components/schemas/AgentRun" }
+            pullRequests:
+              type: array
+              items: { $ref: "#/components/schemas/PullRequest" }
+    StageTransition:
+      type: object
+      required: [id, toStage, actor, at]
+      properties:
+        id: { type: integer, format: int64 }
+        fromStage: { $ref: "#/components/schemas/Stage" }
+        toStage: { $ref: "#/components/schemas/Stage" }
+        reason: { type: string, nullable: true }
+        actor: { type: string, description: "system | agent:<role> | user:<login>" }
+        at: { type: string, format: date-time }
+    RunKind:
+      type: string
+      enum: [triage, refine, implement, review]
+    RunStatus:
+      type: string
+      enum: [running, succeeded, failed, escalated, cancelled]
+    AgentRun:
+      type: object
+      required: [id, ticketId, kind, status, turns, gateIterations, costUsd, startedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/RunKind" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        model: { type: string, nullable: true }
+        turns: { type: integer }
+        gateIterations: { type: integer }
+        costUsd: { type: number, format: double }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+    ToolCallSummary:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        summary: { type: string }
+    AgentTurn:
+      type: object
+      required: [id, runId, n, model, tokensIn, tokensOut, tokensCached, costUsd, toolCalls, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        runId: { type: string, format: uuid }
+        n: { type: integer }
+        model: { type: string }
+        tokensIn: { type: integer, format: int64 }
+        tokensOut: { type: integer, format: int64 }
+        tokensCached: { type: integer, format: int64 }
+        costUsd: { type: number, format: double }
+        toolCalls:
+          type: array
+          items: { $ref: "#/components/schemas/ToolCallSummary" }
+        transcriptRef: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    GateStatus:
+      type: string
+      enum: [pass, fail, warn, error, skipped]
+    GateFinding:
+      type: object
+      required: [message]
+      properties:
+        file: { type: string }
+        line: { type: integer }
+        column: { type: integer }
+        rule: { type: string }
+        severity: { type: string, enum: [error, warning, info] }
+        message: { type: string }
+        suggestion: { type: string }
+    GateResult:
+      type: object
+      required: [id, runId, ticketId, iteration, gateId, status, durationMs, findings]
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        iteration: { type: integer }
+        gateId: { type: string, example: typecheck }
+        status: { $ref: "#/components/schemas/GateStatus" }
+        durationMs: { type: integer, format: int64 }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/GateFinding" }
+        artifactsRef: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    PullRequestState:
+      type: string
+      enum: [open, closed, merged]
+    PullRequest:
+      type: object
+      required: [id, ticketId, ticketKey, ticketTitle, repoFullName, number, url, headBranch, state, blastRadius, turnsUsed, costUsd, openedAt]
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        ticketKey: { type: string }
+        ticketTitle: { type: string }
+        repoFullName: { type: string }
+        number: { type: integer }
+        url: { type: string }
+        headBranch: { type: string, example: alpine/GH-42-fix-login }
+        headSha: { type: string, nullable: true }
+        state: { $ref: "#/components/schemas/PullRequestState" }
+        blastRadius: { $ref: "#/components/schemas/BlastRadius" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        turnsUsed: { type: integer }
+        costUsd: { type: number, format: double }
+        openedAt: { type: string, format: date-time }
+        mergedAt: { type: string, format: date-time, nullable: true }
+        gateSummary: { $ref: "#/components/schemas/GateSummary" }
+        diffSummary: { $ref: "#/components/schemas/DiffSummary" }
+        humanDecision: { $ref: "#/components/schemas/HumanDecision" }
+    GateSummary:
+      type: object
+      description: Counts for the latest gate iteration of the ticket.
+      required: [passed, failed, warned, total]
+      properties:
+        passed: { type: integer }
+        failed: { type: integer }
+        warned: { type: integer }
+        total: { type: integer }
+    DiffSummary:
+      type: object
+      required: [additions, deletions, filesChanged]
+      properties:
+        additions: { type: integer }
+        deletions: { type: integer }
+        filesChanged: { type: integer }
+    HumanDecision:
+      type: string
+      nullable: true
+      enum: [approved, changes_requested]
+    Artifact:
+      type: object
+      required: [id, ticketId, kind, label, url, contentType, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        kind: { type: string, enum: [video, screenshot, trace, log, visual_diff] }
+        label: { type: string }
+        url: { type: string }
+        contentType: { type: string }
+        posterUrl: { type: string, nullable: true, description: Poster frame for videos (the failure moment) }
+        sizeBytes: { type: integer, format: int64, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ReviewVerdict:
+      type: string
+      enum: [approve, request_changes, escalate]
+    ReviewFinding:
+      type: object
+      required: [severity, category, file, message]
+      properties:
+        severity: { type: string, enum: [info, minor, major, blocker] }
+        category: { type: string }
+        file: { type: string, nullable: true }
+        message: { type: string }
+    Review:
+      type: object
+      required: [id, ticketId, verdict, model, findings, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        verdict: { $ref: "#/components/schemas/ReviewVerdict" }
+        model: { type: string }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewFinding" }
+        createdAt: { type: string, format: date-time }
+    VisualDiff:
+      type: object
+      required: [route, beforeUrl, afterUrl, heatmapUrl, changedPixelsPct]
+      properties:
+        route: { type: string }
+        beforeUrl: { type: string }
+        afterUrl: { type: string }
+        heatmapUrl: { type: string, nullable: true }
+        changedPixelsPct: { type: number, format: double }
+    PullRequestFile:
+      type: object
+      required: [path, additions, deletions, status]
+      properties:
+        path: { type: string }
+        additions: { type: integer }
+        deletions: { type: integer }
+        status: { type: string, enum: [added, modified, removed] }
+    PullRequestEvidence:
+      type: object
+      required: [pullRequestId, additions, deletions, files, gateSummary, reviewVerdict, visualDiffs, humanDecision]
+      properties:
+        pullRequestId: { type: string, format: uuid }
+        additions: { type: integer }
+        deletions: { type: integer }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/PullRequestFile" }
+        gateSummary: { $ref: "#/components/schemas/GateSummary" }
+        reviewVerdict:
+          type: string
+          nullable: true
+          enum: [approve, request_changes, escalate]
+        visualDiffs:
+          type: array
+          items: { $ref: "#/components/schemas/VisualDiff" }
+        humanDecision: { $ref: "#/components/schemas/HumanDecision" }
+    PullRequestReviewRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, request_changes] }
+        note: { type: string, maxLength: 4000 }
+    MetricsWindow:
+      type: string
+      enum: [7d, 30d, 90d]
+      default: 30d
+    Metrics:
+      type: object
+      required: [window, repoId, totals, series, gatePassRateByGate, topFailureReasons]
+      properties:
+        window: { $ref: "#/components/schemas/MetricsWindow" }
+        repoId: { type: string, format: uuid, nullable: true }
+        totals: { $ref: "#/components/schemas/MetricsTotals" }
+        series:
+          type: array
+          items: { $ref: "#/components/schemas/MetricsPoint" }
+        gatePassRateByGate:
+          type: array
+          items: { $ref: "#/components/schemas/GatePassRate" }
+        topFailureReasons:
+          type: array
+          items: { $ref: "#/components/schemas/GateFailureReason" }
+    MetricsTotals:
+      type: object
+      required: [ticketsMerged, turnsP50, turnsP90, costPerTicketUsd, costTotalUsd, gatePassRate, escalationRate, leadTimeHoursP50]
+      properties:
+        ticketsMerged: { type: integer }
+        turnsP50: { type: number, format: double }
+        turnsP90: { type: number, format: double }
+        costPerTicketUsd: { type: number, format: double }
+        costTotalUsd: { type: number, format: double }
+        gatePassRate: { type: number, format: double, description: "0..1" }
+        escalationRate: { type: number, format: double, description: "0..1" }
+        leadTimeHoursP50: { type: number, format: double }
+    MetricsPoint:
+      type: object
+      required: [date, ticketsMerged, turnsP50, turnsP90, costUsd, gatePassRate]
+      properties:
+        date: { type: string, format: date }
+        ticketsMerged: { type: integer }
+        turnsP50: { type: number, format: double }
+        turnsP90: { type: number, format: double }
+        costUsd: { type: number, format: double }
+        gatePassRate: { type: number, format: double }
+    GatePassRate:
+      type: object
+      required: [gateId, passRate, runs]
+      properties:
+        gateId: { type: string }
+        passRate: { type: number, format: double }
+        runs: { type: integer }
+    GateFailureReason:
+      type: object
+      required: [gateId, rule, count]
+      properties:
+        gateId: { type: string }
+        rule: { type: string }
+        count: { type: integer }
+    FactoryConfigSpec:
+      type: object
+      description: Parsed `.alpine/factory.yaml` (architecture §6). Keys mirror the YAML (snake_case).
+      required: [version, rules, environment, layers, protected_paths, gates, limits, models, merge_policy]
+      properties:
+        version: { type: integer }
+        rules:
+          type: object
+          required: [files, skills, mcp]
+          properties:
+            files: { type: array, items: { type: string } }
+            skills: { type: array, items: { type: string } }
+            mcp:
+              type: array
+              items:
+                type: object
+                required: [name, url, mode]
+                properties:
+                  name: { type: string }
+                  url: { type: string }
+                  mode: { type: string, enum: [read-only, read-write] }
+        environment:
+          type: object
+          required: [build, install, services, seed]
+          properties:
+            build: { type: string }
+            install: { type: string }
+            services: { type: array, items: { type: string } }
+            seed: { type: string }
+        layers:
+          type: object
+          required: [BR1, BR2, BR3, BR4]
+          properties:
+            BR1: { type: array, items: { type: string } }
+            BR2: { type: array, items: { type: string } }
+            BR3: { type: array, items: { type: string } }
+            BR4: { type: array, items: { type: string } }
+        protected_paths: { type: array, items: { type: string } }
+        gates:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string }
+              run: { type: string }
+              ratchet: { type: boolean }
+              artifacts: { type: array, items: { type: string } }
+              routes: { type: string }
+              max_new_duplication_pct: { type: number, format: double }
+        limits:
+          type: object
+          required: [max_turns, max_gate_iterations, max_cost_usd, max_parallel_tickets]
+          properties:
+            max_turns: { type: integer }
+            max_gate_iterations: { type: integer }
+            max_cost_usd: { type: number, format: double }
+            max_parallel_tickets: { type: integer }
+        models:
+          type: object
+          description: Stage -> model chain, primary first, comma-separated.
+          additionalProperties: { type: string }
+        merge_policy:
+          type: object
+          required: [BR1, BR2, BR3, BR4]
+          properties:
+            BR1: { type: string, enum: [human, auto] }
+            BR2: { type: string, enum: [human, auto] }
+            BR3: { type: string, enum: [human, auto] }
+            BR4: { type: string, enum: [human, auto] }
+    FactoryConfig:
+      type: object
+      required: [repoId, path, sha, rawYaml, parsed, validation, updatedAt]
+      properties:
+        repoId: { type: string, format: uuid }
+        path: { type: string, example: .alpine/factory.yaml }
+        sha: { type: string }
+        rawYaml: { type: string }
+        parsed: { $ref: "#/components/schemas/FactoryConfigSpec" }
+        validation:
+          type: object
+          required: [valid, errors]
+          properties:
+            valid: { type: boolean }
+            errors: { type: array, items: { type: string } }
+        updatedAt: { type: string, format: date-time }
+    TicketAction:
+      type: string
+      description: |
+        approve / reject: decision on a `needs_human` ticket.
+        resume: human added context to an `escalated` ticket (fresh turn/gate budget).
+        close: give up on an escalated ticket.
+        mark_merged: dev helper until PR webhooks are wired; completes a `pr_open` ticket.
+      enum: [approve, reject, resume, close, mark_merged]
+    TicketActionRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { $ref: "#/components/schemas/TicketAction" }
+        note: { type: string, maxLength: 4000 }
+    BoardEventType:
+      type: string
+      enum: [ticket.created, ticket.stage_changed, ticket.updated]
+    BoardEvent:
+      type: object
+      required: [type, orgId, ticketId, repoId, stage, at]
+      properties:
+        type: { $ref: "#/components/schemas/BoardEventType" }
+        orgId: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        repoId: { type: string, format: uuid }
+        stage: { $ref: "#/components/schemas/Stage" }
+        previousStage: { $ref: "#/components/schemas/Stage" }
+        reason: { type: string, nullable: true }
+        at: { type: string, format: date-time }
+    WebhookAck:
+      type: object
+      required: [deliveryId, status]
+      properties:
+        deliveryId: { type: string }
+        status: { type: string, enum: [accepted, duplicate, ignored] }
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        redirectTo: { type: string, description: SPA path to continue to after sign-in }
+    TokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 16, maxLength: 256 }
+    LoginResult:
+      type: object
+      required: [redirectTo]
+      properties:
+        redirectTo: { type: string, example: /board }
+    CsrfToken:
+      type: object
+      required: [csrfToken]
+      properties:
+        csrfToken: { type: string }
+    LogoutAllResult:
+      type: object
+      required: [revokedSessions]
+      properties:
+        revokedSessions: { type: integer }
+    Identity:
+      type: object
+      required: [provider, createdAt]
+      properties:
+        provider: { type: string, enum: [google, github, email, workos] }
+        email: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        login: { type: string, nullable: true, description: GitHub login }
+        hostedDomain: { type: string, nullable: true, description: Google Workspace domain }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+    CreateOrgRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: "^[a-z0-9][a-z0-9-]{1,62}$", description: Derived from name when omitted }
+    UpdateOrgRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+    Member:
+      type: object
+      required: [user, role, joinedAt]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        role: { $ref: "#/components/schemas/Role" }
+        joinedAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+    UpdateMemberRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+    InvitationStatus:
+      type: string
+      enum: [pending, accepted, revoked, expired]
+    Invitation:
+      type: object
+      required: [id, orgId, email, role, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        orgId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/Role" }
+        status: { $ref: "#/components/schemas/InvitationStatus" }
+        invitedBy: { type: string, format: uuid, nullable: true }
+        expiresAt: { type: string, format: date-time }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CreateInvitationRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        role: { $ref: "#/components/schemas/Role" }
+    ApiKeyScope:
+      type: string
+      enum: [tickets:read, tickets:write, repos:read, pull_requests:read, webhooks:write, metrics:read, audit:read, members:read]
+    ApiKeyRole:
+      type: string
+      enum: [admin, member, viewer]
+    ApiKey:
+      type: object
+      required: [id, orgId, name, prefix, scopes, role, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        orgId: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string, description: Public lookup id; the key looks like alp_<prefix>_<secret> }
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKeyScope" }
+        role: { $ref: "#/components/schemas/ApiKeyRole" }
+        createdBy: { type: string, format: uuid, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CreateApiKeyRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        scopes:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ApiKeyScope" }
+        role: { $ref: "#/components/schemas/ApiKeyRole" }
+        expiresAt: { type: string, format: date-time, nullable: true }
+    ApiKeyCreated:
+      type: object
+      required: [apiKey, token]
+      properties:
+        apiKey: { $ref: "#/components/schemas/ApiKey" }
+        token: { type: string, description: The full key. Shown exactly once; store it securely. }
+    AuditEntry:
+      type: object
+      required: [id, actorType, actorId, action, targetType, targetId, metadata, at]
+      properties:
+        id: { type: integer, format: int64 }
+        actorType: { type: string, enum: [user, agent, system, api_key] }
+        actorId: { type: string }
+        action: { type: string, example: member.role_changed }
+        targetType: { type: string }
+        targetId: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+        at: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+        nextCursor: { type: string, nullable: true }

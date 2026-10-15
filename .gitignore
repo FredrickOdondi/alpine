@@ -1,0 +1,35 @@
+# deps / build output
+node_modules/
+dist/
+bin/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# local data
+.data/
+tmp/
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+# go
+*.test
+*.out
+go.work.sum.bak
+
+# apps/web
+*.local
+# stray `go build` outputs from cmd/* (use `make build` → bin/)
+/services/api/api
+/services/api/migrate
+/services/api/seed
+/services/orchestrator/worker
+/services/runner/runner

@@ -1,0 +1,6 @@
+{"ImportPath":"example.com/fixture/calc [example.com/fixture/calc.test]","Action":"build-output","Output":"# example.com/fixture/calc [example.com/fixture/calc.test]\n"}
+{"ImportPath":"example.com/fixture/calc [example.com/fixture/calc.test]","Action":"build-output","Output":"calc/broken.go:4:9: undefined: foo\n"}
+{"ImportPath":"example.com/fixture/calc [example.com/fixture/calc.test]","Action":"build-fail"}
+{"Time":"2026-10-15T19:31:42.849543708+03:00","Action":"start","Package":"example.com/fixture/calc"}
+{"Time":"2026-10-15T19:31:42.849594568+03:00","Action":"output","Package":"example.com/fixture/calc","Output":"FAIL\texample.com/fixture/calc [build failed]\n"}
+{"Time":"2026-10-15T19:31:42.849601331+03:00","Action":"fail","Package":"example.com/fixture/calc","Elapsed":0,"FailedBuild":"example.com/fixture/calc [example.com/fixture/calc.test]"}

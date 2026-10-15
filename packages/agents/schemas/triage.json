@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["classification", "summary", "confidence", "already_fixed", "duplicate_of_external_id", "reason"],
+  "properties": {
+    "classification": { "type": "string", "enum": ["bug", "feature", "question", "noise"] },
+    "summary": { "type": "string", "maxLength": 400 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "already_fixed": { "type": "boolean" },
+    "duplicate_of_external_id": { "type": ["string", "null"] },
+    "reason": { "type": "string", "maxLength": 600 }
+  }
+}

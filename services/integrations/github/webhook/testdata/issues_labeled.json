@@ -1,0 +1,19 @@
+{
+  "action": "labeled",
+  "issue": {
+    "html_url": "https://github.com/acme/shop/issues/43",
+    "id": 2001002,
+    "number": 43,
+    "title": "Crash on empty cart",
+    "user": {"login": "dependabot[bot]", "id": 49699333, "type": "Bot"},
+    "labels": [{"name": "P0"}],
+    "state": "open",
+    "created_at": "2026-10-14T10:00:00Z",
+    "updated_at": "2026-10-14T10:05:00Z",
+    "body": null
+  },
+  "label": {"name": "P0"},
+  "repository": {"id": 777, "name": "shop", "full_name": "acme/shop", "default_branch": "main", "owner": {"login": "acme"}},
+  "sender": {"login": "maintainer", "id": 7, "type": "User"},
+  "installation": {"id": 5550001}
+}

@@ -1,0 +1,17 @@
+{"Time":"2026-10-15T19:31:42.223556299+03:00","Action":"start","Package":"example.com/fixture/calc"}
+{"Time":"2026-10-15T19:31:42.225295094+03:00","Action":"run","Package":"example.com/fixture/calc","Test":"TestDiv"}
+{"Time":"2026-10-15T19:31:42.225315688+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv","Output":"=== RUN   TestDiv\n"}
+{"Time":"2026-10-15T19:31:42.225353849+03:00","Action":"run","Package":"example.com/fixture/calc","Test":"TestDiv/ok"}
+{"Time":"2026-10-15T19:31:42.225357029+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv/ok","Output":"=== RUN   TestDiv/ok\n"}
+{"Time":"2026-10-15T19:31:42.225362109+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv/ok","Output":"--- PASS: TestDiv/ok (0.00s)\n"}
+{"Time":"2026-10-15T19:31:42.225366865+03:00","Action":"pass","Package":"example.com/fixture/calc","Test":"TestDiv/ok","Elapsed":0}
+{"Time":"2026-10-15T19:31:42.225392743+03:00","Action":"run","Package":"example.com/fixture/calc","Test":"TestDiv/by_zero"}
+{"Time":"2026-10-15T19:31:42.225394511+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv/by_zero","Output":"=== RUN   TestDiv/by_zero\n"}
+{"Time":"2026-10-15T19:31:42.225396461+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv/by_zero","Output":"    calc_test.go:18: Div(1, 1) = 1, want error (deliberate failure)\n"}
+{"Time":"2026-10-15T19:31:42.225400976+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv/by_zero","Output":"--- FAIL: TestDiv/by_zero (0.00s)\n"}
+{"Time":"2026-10-15T19:31:42.225402683+03:00","Action":"fail","Package":"example.com/fixture/calc","Test":"TestDiv/by_zero","Elapsed":0}
+{"Time":"2026-10-15T19:31:42.225404655+03:00","Action":"output","Package":"example.com/fixture/calc","Test":"TestDiv","Output":"--- FAIL: TestDiv (0.00s)\n"}
+{"Time":"2026-10-15T19:31:42.225406805+03:00","Action":"fail","Package":"example.com/fixture/calc","Test":"TestDiv","Elapsed":0}
+{"Time":"2026-10-15T19:31:42.225408572+03:00","Action":"output","Package":"example.com/fixture/calc","Output":"FAIL\n"}
+{"Time":"2026-10-15T19:31:42.225660325+03:00","Action":"output","Package":"example.com/fixture/calc","Output":"FAIL\texample.com/fixture/calc\t0.002s\n"}
+{"Time":"2026-10-15T19:31:42.225688798+03:00","Action":"fail","Package":"example.com/fixture/calc","Elapsed":0.002}

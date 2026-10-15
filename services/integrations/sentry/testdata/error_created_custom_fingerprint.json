@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "actor": {"id": "sentry", "name": "Sentry", "type": "application"},
+  "data": {
+    "error": {
+      "culprit": "payments.charge",
+      "event_id": "0c9e1f2a3b4c5d6e7f8091a2b3c4d5e6",
+      "fingerprint": ["payments", "stripe-timeout"],
+      "issue_id": "2200000001",
+      "level": "warning",
+      "message": "Stripe request timed out after 30s",
+      "metadata": {"title": "Stripe request timed out after 30s"},
+      "platform": "python",
+      "project": 42,
+      "timestamp": 1760518800.5,
+      "title": "Stripe request timed out after 30s",
+      "url": "https://sentry.io/api/0/projects/acme/payments-api/events/0c9e1f2a3b4c5d6e7f8091a2b3c4d5e6/",
+      "web_url": "https://acme.sentry.io/issues/2200000001/events/0c9e1f2a3b4c5d6e7f8091a2b3c4d5e6/"
+    }
+  },
+  "installation": {"uuid": "a8e5d37a-696c-4c54-adb5-b3f28d64c7de"}
+}

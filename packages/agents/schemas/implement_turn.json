@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "ready_for_gates", "tool_calls"],
+  "properties": {
+    "summary": { "type": "string", "maxLength": 800 },
+    "ready_for_gates": { "type": "boolean" },
+    "tool_calls": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "summary"],
+        "properties": { "name": { "type": "string" }, "summary": { "type": "string" } }
+      }
+    }
+  }
+}

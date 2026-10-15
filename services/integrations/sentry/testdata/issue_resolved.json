@@ -1,0 +1,22 @@
+{
+  "action": "resolved",
+  "installation": {"uuid": "24b397fc-a86e-43ef-9297-949e21b82480"},
+  "data": {
+    "issue": {
+      "web_url": "https://acme.sentry.io/issues/1234567890/",
+      "id": "1234567890",
+      "shortId": "SHOP-WEB-Y",
+      "title": "TypeError: Cannot read properties of undefined (reading 'total')",
+      "culprit": "app/checkout/Cart.tsx in computeTotal",
+      "level": "error",
+      "status": "resolved",
+      "statusDetails": {"inRelease": "shop-web@1.4.2"},
+      "platform": "javascript",
+      "project": {"id": "4509877862268928", "slug": "shop-web"},
+      "metadata": {"type": "TypeError", "value": "Cannot read properties of undefined (reading 'total')"},
+      "firstSeen": "2026-10-14T20:56:00.679000+00:00",
+      "lastSeen": "2026-10-15T06:00:00+00:00"
+    }
+  },
+  "actor": {"type": "user", "id": "12345", "name": "Jane Dev"}
+}

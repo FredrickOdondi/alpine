@@ -1,0 +1,17 @@
+{
+  "name": "review_tautological_test",
+  "stage": "review",
+  "ticket": {"key": "GH-21", "title": "Typo on pricing page", "body": "", "source": "github", "repoFullName": "acme/widgets"},
+  "review": {
+    "ticket": {"key": "GH-21", "title": "Typo on pricing page", "body": "", "source": "github", "repoFullName": "acme/widgets"},
+    "acceptanceCriteria": ["Pricing page shows 'Monthly'"],
+    "diff": "--- a/src/pages/pricing.test.tsx\n+++ b/src/pages/pricing.test.tsx\n+it('renders', () => { expect(true).toBe(true) })\n--- a/src/pages/pricing.tsx\n+++ b/src/pages/pricing.tsx\n-<span>Montly</span>\n+<span>Monthly</span>",
+    "rulesFile": "Tests must assert user-visible behaviour.",
+    "moduleMap": "src/pages -> src/components",
+    "blastRadius": 1
+  },
+  "recorded": [
+    {"model": "o3", "content": "{\"verdict\":\"request_changes\",\"summary\":\"Copy fix is correct but the added test is tautological.\",\"findings\":[{\"severity\":\"major\",\"category\":\"tautological_test\",\"file\":\"src/pages/pricing.test.tsx\",\"line\":1,\"message\":\"expect(true).toBe(true) does not encode the acceptance criterion; assert the page renders 'Monthly'.\"}],\"raise_blast_radius_to\":null}", "usage": {"inputTokens": 2100, "outputTokens": 140}}
+  ],
+  "expect": {"verdict": "request_changes", "minFindings": 1, "calls": 1}
+}

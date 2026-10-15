@@ -1,0 +1,8 @@
+{"Time":"2026-10-15T19:31:42.749066919+03:00","Action":"start","Package":"example.com/fixture/panicky"}
+{"Time":"2026-10-15T19:31:42.752892654+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"panic: init failed\n"}
+{"Time":"2026-10-15T19:31:42.752930425+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"\n"}
+{"Time":"2026-10-15T19:31:42.75293323+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"goroutine 1 [running]:\n"}
+{"Time":"2026-10-15T19:31:42.752935183+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"example.com/fixture/panicky.init.0()\n"}
+{"Time":"2026-10-15T19:31:42.752940647+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"\t/repo/panicky/panicky_test.go:5 +0x25\n"}
+{"Time":"2026-10-15T19:31:42.753028973+03:00","Action":"output","Package":"example.com/fixture/panicky","Output":"FAIL\texample.com/fixture/panicky\t0.004s\n"}
+{"Time":"2026-10-15T19:31:42.753054898+03:00","Action":"fail","Package":"example.com/fixture/panicky","Elapsed":0.004}

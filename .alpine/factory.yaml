@@ -1,0 +1,64 @@
+# Example Alpine factory config (architecture §6). Alpine reads this file from the repo's
+# BASE branch; agents can never change the gates that judge them.
+version: 1
+rules:
+  files: [AGENTS.md, CLAUDE.md, .alpine/rules/*.md]   # concatenated, in order
+  skills: [vercel/react, aws/lambda]                  # vendor skill packs
+  mcp:
+    - name: posthog
+      url: https://mcp.example.com/posthog
+      mode: read-only
+environment:
+  build: .alpine/env/Dockerfile     # or devcontainer: .devcontainer/devcontainer.json
+  install: pnpm install --frozen-lockfile
+  services: [postgres:16, redis:7]
+  seed: .alpine/seed/seed.ts        # synthetic/anonymized data recipe — never prod dumps
+layers:                             # blast radius mapping (highest match wins)
+  BR4: ["db/migrations/**", "prisma/schema.prisma", "infra/**", "src/billing/**"]
+  BR3: ["src/server/**", "api/**"]
+  BR2: ["src/design-system/**", "src/components/ui/**"]
+  BR1: ["src/pages/**", "src/features/**"]
+protected_paths: [".github/workflows/**", ".alpine/**", "src/auth/**"]
+gates:
+  - id: lint
+    run: pnpm lint
+  - id: typecheck
+    run: pnpm tsc --noEmit
+  - id: fallow
+    run: npx fallow health --format json
+    ratchet: true                   # new code must not worsen the base-branch baseline
+  - id: dupes
+    run: npx jscpd --reporters json --absolute --output .alpine-gates/jscpd src
+    parser: jscpd
+    report_file: .alpine-gates/jscpd/jscpd-report.json
+    max_new_duplication_pct: 0
+  - id: unit
+    run: pnpm test --reporter=json
+  - id: e2e
+    run: pnpm playwright test --grep @affected
+    artifacts: ["test-results/**"]
+  - id: visual
+    routes: auto                    # derive affected routes from diff + ticket
+    warn_only: true                 # default: never blocks; diffs above threshold route the PR to a human
+    threshold: 0.01                 # fraction of changed pixels
+gate_runner:
+  # Gate schema (parsers, report files, thresholds, artifacts) is validated by packages/gates.
+  # Artifacts are uploaded to S3 under the run's ArtifactsRoot; gates-only secrets are injected
+  # via the runner's ExtraEnv and never reach the implementer sandbox.
+  extra_env: [PLAYWRIGHT_BASE_URL]
+limits:
+  max_turns: 100
+  max_gate_iterations: 15
+  max_cost_usd: 20
+  max_parallel_tickets: 5
+models:
+  # OpenAI is the model provider. Values are model names (or a fallback list, primary first);
+  # the reviewer must use a different model than the implementer.
+  implementer: [gpt-5, gpt-4.1]
+  reviewer: [o3, gpt-5-mini]
+  triage: gpt-5-mini
+merge_policy:
+  BR1: human        # later: auto
+  BR2: human
+  BR3: human
+  BR4: human

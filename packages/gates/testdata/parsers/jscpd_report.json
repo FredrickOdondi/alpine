@@ -1,0 +1,71 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 14,
+        "endLoc": {
+          "column": 1,
+          "line": 14,
+          "position": 408
+        },
+        "name": "/repo/src/a.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 20,
+          "line": 1,
+          "position": 20
+        }
+      },
+      "format": "typescript",
+      "fragment": "export function sumA(values: number[]): number {\n  let total = 0;\n  for (const v of values) {\n    if (Number.isFinite(v)) {\n      total += v;\n    } else {\n      throw new Error(\"not finite: \" + String(v));\n    }\n  }\n  const avg = values.length ? total / values.length : 0;\n  const label = avg > 10 ? \"high\" : avg > 5 ? \"mid\" : \"low\";\n  console.log(\"sum\", total, \"avg\", avg, \"label\", label);\n  return total;\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 14,
+        "endLoc": {
+          "column": 1,
+          "line": 14,
+          "position": 408
+        },
+        "name": "/repo/src/b.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 20,
+          "line": 1,
+          "position": 20
+        }
+      },
+      "tokens": 107
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-10-15T16:31:46.603Z",
+    "formats": {
+      "typescript": {
+        "clones": 1,
+        "duplicatedLines": 14,
+        "duplicatedTokens": 107,
+        "lines": 82,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 17.073170731707318,
+        "percentageTokens": 17.54098360655738,
+        "sources": 7,
+        "tokens": 610
+      }
+    },
+    "total": {
+      "clones": 1,
+      "duplicatedLines": 14,
+      "duplicatedTokens": 107,
+      "lines": 82,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 17.073170731707318,
+      "percentageTokens": 17.54098360655738,
+      "sources": 7,
+      "tokens": 610
+    }
+  }
+}

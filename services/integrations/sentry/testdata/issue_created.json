@@ -1,0 +1,31 @@
+{
+  "action": "created",
+  "installation": {"uuid": "24b397fc-a86e-43ef-9297-949e21b82480"},
+  "data": {
+    "issue": {
+      "url": "https://sentry.io/api/0/organizations/acme/issues/1234567890/",
+      "web_url": "https://acme.sentry.io/issues/1234567890/",
+      "project_url": "https://acme.sentry.io/issues/?project=4509877862268928",
+      "id": "1234567890",
+      "shortId": "SHOP-WEB-Y",
+      "title": "TypeError: Cannot read properties of undefined (reading 'total')",
+      "culprit": "app/checkout/Cart.tsx in computeTotal",
+      "permalink": "https://acme.sentry.io/issues/1234567890/",
+      "level": "fatal",
+      "status": "unresolved",
+      "substatus": "new",
+      "platform": "javascript",
+      "project": {"id": "4509877862268928", "name": "shop-web", "slug": "shop-web", "platform": "javascript-react"},
+      "type": "error",
+      "metadata": {"type": "TypeError", "value": "Cannot read properties of undefined (reading 'total')", "filename": "app/checkout/Cart.tsx", "function": "computeTotal"},
+      "issueType": "error",
+      "issueCategory": "error",
+      "priority": "high",
+      "count": "3",
+      "userCount": 3,
+      "firstSeen": "2026-10-14T20:56:00.679000+00:00",
+      "lastSeen": "2026-10-14T20:58:00.738000+00:00"
+    }
+  },
+  "actor": {"type": "application", "id": "sentry", "name": "Sentry"}
+}

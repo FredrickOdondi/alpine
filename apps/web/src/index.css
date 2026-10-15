@@ -1,0 +1,6 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "./design/tokens.css";
+
+@custom-variant dark (&:is(.dark *));

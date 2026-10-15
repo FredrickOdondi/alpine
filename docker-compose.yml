@@ -1,0 +1,72 @@
+# Local dev stack. `make dev` starts it; services (api, worker) run on the host with `make run-api`
+# / `make run-worker`. Host ports are configurable via .env (e.g. POSTGRES_PORT=5433).
+name: alpine
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_USER: alpine
+      POSTGRES_PASSWORD: alpine
+      POSTGRES_DB: alpine
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alpine -d alpine"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: alpine
+      MINIO_ROOT_PASSWORD: alpine-secret
+    ports: ["${MINIO_PORT:-9000}:9000", "${MINIO_CONSOLE_PORT:-9001}:9001"]
+    volumes: [miniodata:/data]
+    profiles: ["storage"] # artifacts storage; not used by Phase 0 code paths: `docker compose --profile storage up -d`
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      retries: 30
+
+  minio-init:
+    image: minio/mc
+    depends_on: { minio: { condition: service_healthy } }
+    entrypoint: >
+      /bin/sh -c "mc alias set local http://minio:9000 alpine alpine-secret &&
+                  mc mb --ignore-existing local/alpine-artifacts && echo bucket ready"
+    restart: "no"
+    profiles: ["storage"]
+
+  temporal:
+    image: temporalio/temporal:1.9.1
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--ui-ip", "0.0.0.0", "--db-filename", "/data/temporal.db"]
+    ports: ["${TEMPORAL_PORT:-7233}:7233", "${TEMPORAL_UI_PORT:-8233}:8233"]
+    volumes: [temporaldata:/data]
+    user: "0"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder-not-used-in-stub-mode}
+      LITELLM_MASTER_KEY: ${LLM_API_KEY:-sk-alpine-dev}
+    volumes: ["./infra/litellm/config.yaml:/app/config.yaml:ro"]
+    ports: ["${LITELLM_PORT:-4000}:4000"]
+    profiles: ["llm"]   # only needed with ALPINE_AGENT_MODE=llm: `docker compose --profile llm up -d`
+
+volumes:
+  pgdata:
+  miniodata:
+  temporaldata:

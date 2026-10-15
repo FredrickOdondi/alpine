@@ -1,0 +1,10 @@
+{
+  "name": "triage_repair_invalid_json",
+  "stage": "triage",
+  "ticket": {"key": "GH-14", "title": "Add dark mode", "body": "It would be nice to have a dark theme.", "source": "github", "repoFullName": "acme/widgets"},
+  "recorded": [
+    {"model": "gpt-5-mini", "content": "Sure! This is a feature request: {classification: feature}", "usage": {"inputTokens": 500, "outputTokens": 20}},
+    {"model": "gpt-5-mini", "content": "{\"classification\":\"feature\",\"summary\":\"Request for a dark theme.\",\"confidence\":0.9,\"already_fixed\":false,\"duplicate_of_external_id\":null,\"reason\":\"Asks for new capability.\"}", "usage": {"inputTokens": 560, "outputTokens": 48}}
+  ],
+  "expect": {"classification": "feature", "calls": 2}
+}

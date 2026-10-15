@@ -1,0 +1,11 @@
+go 1.26.0
+
+use (
+	./packages/agents
+	./packages/gates
+	./packages/shared
+	./services/api
+	./services/integrations
+	./services/orchestrator
+	./services/runner
+)

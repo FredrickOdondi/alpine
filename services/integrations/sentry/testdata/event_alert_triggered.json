@@ -1,0 +1,20 @@
+{
+  "action": "triggered",
+  "actor": {"id": "sentry", "name": "Sentry", "type": "application"},
+  "data": {
+    "event": {
+      "event_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "group_id": 3300000003,
+      "fingerprint": ["{{ default }}", "checkout"],
+      "level": "info",
+      "message": "Slow checkout",
+      "platform": "node",
+      "project": 7,
+      "datetime": "2026-10-15T05:00:00Z",
+      "title": "Slow checkout",
+      "web_url": "https://acme.sentry.io/issues/3300000003/events/a1b2c3d4e5f60718293a4b5c6d7e8f90/"
+    },
+    "triggered_rule": "Checkout errors"
+  },
+  "installation": {"uuid": "a8e5d37a-696c-4c54-adb5-b3f28d64c7de"}
+}

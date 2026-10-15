@@ -1,0 +1,8 @@
+{
+  "action": "assigned",
+  "issue": {"id": 2001001, "number": 42, "title": "x", "user": {"login": "octocat"}, "labels": []},
+  "assignee": {"login": "octocat"},
+  "repository": {"id": 777, "name": "shop", "full_name": "acme/shop", "default_branch": "main"},
+  "sender": {"login": "octocat", "type": "User"},
+  "installation": {"id": 5550001}
+}

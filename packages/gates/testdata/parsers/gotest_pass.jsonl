@@ -1,0 +1,8 @@
+{"Time":"2026-10-15T19:31:42.444478858+03:00","Action":"start","Package":"example.com/fixture/clean"}
+{"Time":"2026-10-15T19:31:42.449514461+03:00","Action":"run","Package":"example.com/fixture/clean","Test":"TestAdd"}
+{"Time":"2026-10-15T19:31:42.449533368+03:00","Action":"output","Package":"example.com/fixture/clean","Test":"TestAdd","Output":"=== RUN   TestAdd\n"}
+{"Time":"2026-10-15T19:31:42.449573003+03:00","Action":"output","Package":"example.com/fixture/clean","Test":"TestAdd","Output":"--- PASS: TestAdd (0.00s)\n"}
+{"Time":"2026-10-15T19:31:42.449575948+03:00","Action":"pass","Package":"example.com/fixture/clean","Test":"TestAdd","Elapsed":0}
+{"Time":"2026-10-15T19:31:42.449581038+03:00","Action":"output","Package":"example.com/fixture/clean","Output":"PASS\n"}
+{"Time":"2026-10-15T19:31:42.449616461+03:00","Action":"output","Package":"example.com/fixture/clean","Output":"ok  \texample.com/fixture/clean\t0.005s\n"}
+{"Time":"2026-10-15T19:31:42.450032207+03:00","Action":"pass","Package":"example.com/fixture/clean","Elapsed":0.006}

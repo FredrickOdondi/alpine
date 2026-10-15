@@ -1,0 +1,60 @@
+{
+  "action": "edited",
+  "changes": {
+    "body": {
+      "from": "old"
+    }
+  },
+  "issue": {
+    "html_url": "https://github.com/acme/shop/pull/50",
+    "id": 2001050,
+    "number": 50,
+    "title": "alpine: fix checkout on Safari",
+    "user": {
+      "login": "alpine-factory[bot]",
+      "type": "Bot"
+    },
+    "labels": [
+      {
+        "name": "alpine"
+      }
+    ],
+    "state": "open",
+    "pull_request": {
+      "url": "https://api.github.com/repos/acme/shop/pulls/50",
+      "html_url": "https://github.com/acme/shop/pull/50"
+    },
+    "created_at": "2026-10-15T07:00:00Z",
+    "updated_at": "2026-10-15T07:30:00Z",
+    "body": "PR body"
+  },
+  "comment": {
+    "html_url": "https://github.com/acme/shop/pull/50#issuecomment-9000050",
+    "id": 9000050,
+    "user": {
+      "login": "reviewer",
+      "id": 8,
+      "type": "User"
+    },
+    "created_at": "2026-10-15T07:10:00Z",
+    "updated_at": "2026-10-15T07:30:00Z",
+    "body": "Please also handle the empty-cart case."
+  },
+  "repository": {
+    "id": 777,
+    "name": "shop",
+    "full_name": "acme/shop",
+    "default_branch": "main",
+    "owner": {
+      "login": "acme"
+    }
+  },
+  "sender": {
+    "login": "reviewer",
+    "id": 8,
+    "type": "User"
+  },
+  "installation": {
+    "id": 5550001
+  }
+}

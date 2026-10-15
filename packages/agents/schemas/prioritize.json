@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "reason", "needs_product_decision", "architecture_changing"],
+  "properties": {
+    "decision": { "type": "string", "enum": ["ready", "needs_human"] },
+    "reason": { "type": "string", "maxLength": 600 },
+    "needs_product_decision": { "type": "boolean" },
+    "architecture_changing": { "type": "boolean" }
+  }
+}

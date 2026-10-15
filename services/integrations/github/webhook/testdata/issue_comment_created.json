@@ -1,0 +1,26 @@
+{
+  "action": "created",
+  "issue": {
+    "html_url": "https://github.com/acme/shop/issues/42",
+    "id": 2001001,
+    "number": 42,
+    "title": "Checkout button does nothing on Safari",
+    "user": {"login": "octocat", "id": 1, "type": "User"},
+    "labels": [{"name": "bug"}, {"name": "alpine"}],
+    "state": "open",
+    "created_at": "2026-10-14T09:30:00Z",
+    "updated_at": "2026-10-14T11:00:00Z",
+    "body": "Steps..."
+  },
+  "comment": {
+    "html_url": "https://github.com/acme/shop/issues/42#issuecomment-9000001",
+    "id": 9000001,
+    "user": {"login": "hubot", "id": 2, "type": "User"},
+    "created_at": "2026-10-14T11:00:00Z",
+    "updated_at": "2026-10-14T11:00:00Z",
+    "body": "Also reproduces on iOS 18."
+  },
+  "repository": {"id": 777, "name": "shop", "full_name": "acme/shop", "default_branch": "main", "owner": {"login": "acme"}},
+  "sender": {"login": "hubot", "id": 2, "type": "User"},
+  "installation": {"id": 5550001}
+}

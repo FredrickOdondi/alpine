@@ -1,0 +1,10 @@
+{
+  "name": "prioritize_ready_ui_tweak",
+  "stage": "prioritize",
+  "ticket": {"key": "GH-21", "title": "Typo on pricing page", "body": "'Montly' should be 'Monthly'.", "source": "github", "repoFullName": "acme/widgets"},
+  "refine": {"problem": "typo", "repro_steps": ["open /pricing"], "acceptance_criteria": ["Pricing page shows 'Monthly'"], "out_of_scope": [], "reproduced": true, "blast_radius": 1, "blast_radius_justification": "copy only", "priority": "P3", "size": "XS", "confidence": 0.97, "likely_files": ["src/pages/pricing.tsx"]},
+  "recorded": [
+    {"model": "gpt-5-nano", "content": "{\"decision\":\"ready\",\"reason\":\"Trivial copy fix with clear AC.\",\"needs_product_decision\":false,\"architecture_changing\":false}", "usage": {"inputTokens": 650, "outputTokens": 28}}
+  ],
+  "expect": {"decision": "ready", "calls": 1}
+}

@@ -1,0 +1,13 @@
+{
+  "name": "alpine",
+  "private": true,
+  "packageManager": "pnpm@10.33.4",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "gen": "pnpm --filter @alpine/api-client gen",
+    "dev": "pnpm --filter @alpine/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "build": "pnpm -r --if-present build"
+  }
+}

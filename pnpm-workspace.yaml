@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/api-client"
+
+# msw's postinstall only copies the service worker, which is committed in apps/web/public.
+ignoredBuiltDependencies:
+  - msw

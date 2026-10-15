@@ -1,0 +1,220 @@
+# CI for the Alpine monorepo itself.
+#
+#   detect      -> finds Go workspace modules (go.work), the web app and SQL migrations
+#   go-lint     -> golangci-lint per Go module                       (matrix over go.work)
+#   go-test     -> gofmt, go mod tidy, vet, build, test -race per module (matrix over go.work)
+#   web         -> apps/web: pnpm install, lint, typecheck, build     (skipped until apps/web/package.json exists)
+#   migrations  -> validate, apply, roll back and re-apply goose SQL migrations on Postgres 16 +
+#                  pgvector (matrix over every "migrations" dir with .sql files, e.g.
+#                  packages/shared/db/migrations), then the RLS integration tests; skipped if none exist
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Cancel superseded runs on PRs/branches; let every main commit finish.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  GOLANGCI_LINT_VERSION: v2.13
+  NODE_VERSION: "24"
+
+jobs:
+  detect:
+    name: Detect projects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go-modules: ${{ steps.go.outputs.modules }}
+      web: ${{ steps.web.outputs.present }}
+      migration-dirs: ${{ steps.migrations.outputs.dirs }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache: false
+      - name: Go modules from go.work
+        id: go
+        run: |
+          modules=$(go work edit -json | jq -c '[.Use[].DiskPath | sub("^\\./"; "")]')
+          echo "modules=$modules" >> "$GITHUB_OUTPUT"
+          echo "Go modules: $modules"
+          # Every go.mod in the repo must be in the workspace, otherwise CI would silently skip it.
+          missing=0
+          while IFS= read -r mod; do
+            dir=$(dirname "$mod" | sed 's|^\./||')
+            if ! jq -e --arg d "$dir" 'index($d)' <<<"$modules" >/dev/null; then
+              echo "::error file=$mod::$dir has a go.mod but is not listed in go.work"
+              missing=1
+            fi
+          done < <(find . -name go.mod -not -path '*/node_modules/*' -not -path '*/testdata/*' -not -path './.git/*')
+          exit $missing
+      - name: Web app
+        id: web
+        run: |
+          if [ -f apps/web/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/web/package.json not found; web job skipped"
+          fi
+      - name: Migration directories
+        id: migrations
+        run: |
+          # Every directory named "migrations" that contains .sql files (goose format).
+          dirs=$(find . -type d -name migrations -not -path '*/node_modules/*' -not -path '*/testdata/*' -not -path './.git/*' \
+                   -exec sh -c 'ls "$1"/*.sql >/dev/null 2>&1 && echo "${1#./}"' _ {} \; \
+                 | sort | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+          if [ "$dirs" = "[]" ]; then
+            echo "::notice::No SQL migrations found; migrations job skipped"
+          else
+            echo "Migration dirs: $dirs"
+          fi
+
+  go-lint:
+    name: golangci-lint (${{ matrix.module }})
+    needs: detect
+    if: needs.detect.outputs.go-modules != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.detect.outputs.go-modules) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: ${{ matrix.module }}
+
+  go-test:
+    name: go test (${{ matrix.module }})
+    needs: detect
+    if: needs.detect.outputs.go-modules != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.detect.outputs.go-modules) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1; fi
+      - name: go mod tidy
+        run: go mod tidy -diff
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        run: go test -race -count=1 ./...
+
+  web:
+    name: Web (apps/web)
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm version comes from "packageManager" in the root package.json (pnpm workspace root).
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm --filter ./apps/web run lint
+      - name: Typecheck
+        run: |
+          if jq -e '.scripts.typecheck' apps/web/package.json >/dev/null; then
+            pnpm --filter ./apps/web run typecheck
+          else
+            pnpm --filter ./apps/web exec tsc -b
+          fi
+      - name: Build
+        run: pnpm --filter ./apps/web run build
+
+  migrations:
+    name: Migrations (${{ matrix.dir }})
+    needs: detect
+    if: needs.detect.outputs.migration-dirs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJSON(needs.detect.outputs.migration-dirs) }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: alpine
+          POSTGRES_PASSWORD: alpine-ci-only
+          POSTGRES_DB: alpine_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U alpine -d alpine_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Throwaway database inside a CI service container; not a real credential.
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: postgres://alpine:alpine-ci-only@localhost:5432/alpine_ci?sslmode=disable
+      MIGRATIONS_DIR: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+      - name: Install goose (same version packages/shared uses at runtime)
+        run: |
+          version=$(cd packages/shared && go list -m -f '{{.Version}}' github.com/pressly/goose/v3 2>/dev/null || echo v3)
+          go install "github.com/pressly/goose/v3/cmd/goose@${version}"
+      - name: Validate
+        run: goose -dir "$MIGRATIONS_DIR" validate
+      - name: Apply all
+        run: goose -dir "$MIGRATIONS_DIR" up
+      - name: Roll back all (every migration must be reversible)
+        run: goose -dir "$MIGRATIONS_DIR" reset
+      - name: Re-apply all from scratch
+        run: |
+          goose -dir "$MIGRATIONS_DIR" up
+          goose -dir "$MIGRATIONS_DIR" status
+      # The RLS integration tests in packages/shared/db skip without a database; run them
+      # here against the freshly migrated schema, connecting as the non-owner alpine_app role.
+      - name: RLS integration tests (packages/shared/db)
+        if: matrix.dir == 'packages/shared/db/migrations'
+        env:
+          ALPINE_TEST_DATABASE_URL: postgres://alpine_app:alpine-app-ci-only@localhost:5432/alpine_ci?sslmode=disable
+        run: |
+          psql "$GOOSE_DBSTRING" -v ON_ERROR_STOP=1 -c "ALTER ROLE alpine_app LOGIN PASSWORD 'alpine-app-ci-only'"
+          cd packages/shared && go test -count=1 ./db/...
