@@ -23,6 +23,7 @@ import (
 	"github.com/alpine-dev/alpine/services/api/internal/apigen"
 	"github.com/alpine-dev/alpine/services/api/internal/auth"
 	"github.com/alpine-dev/alpine/services/api/internal/authapi"
+	"github.com/alpine-dev/alpine/services/api/internal/onboarding"
 	"github.com/alpine-dev/alpine/services/api/internal/store"
 	"github.com/alpine-dev/alpine/services/api/internal/webhook"
 	"github.com/alpine-dev/alpine/services/api/internal/workflows"
@@ -66,6 +67,7 @@ type Server struct {
 	Webhooks      *webhook.Receiver
 	Artifacts     ArtifactURLs
 	Reviews       ReviewMirror
+	Onboarding    *onboarding.Service
 	Ready         map[string]Checker
 	Logger        *slog.Logger
 	// SSEPing is the keepalive interval (default 15s).

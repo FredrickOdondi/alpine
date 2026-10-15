@@ -25,6 +25,7 @@ type memStore struct {
 	marks             map[uuid.UUID]string
 	tickets           map[uuid.UUID]ticketrepo.NewTicket
 	knownInstallation int64
+	disabledRepos     map[int64]bool
 }
 
 func newMem() *memStore {
@@ -67,11 +68,14 @@ func (m *memStore) MarkInbox(_ context.Context, _, id uuid.UUID, outcome, _, err
 	}
 	return nil
 }
-func (m *memStore) UpsertRepoForIntake(_ context.Context, _ uuid.UUID, ref intake.RepoRef) (uuid.UUID, error) {
+func (m *memStore) EnabledRepoForIntake(_ context.Context, _ uuid.UUID, ref intake.RepoRef) (uuid.UUID, string, error) {
 	if ref.InstallationID != m.knownInstallation {
-		return uuid.Nil, ticketrepo.ErrNotFound
+		return uuid.Nil, "unknown_installation", nil
 	}
-	return m.repoID, nil
+	if m.disabledRepos[ref.RepoID] {
+		return uuid.Nil, "repo_not_enabled", nil
+	}
+	return m.repoID, "", nil
 }
 func (m *memStore) CreateTicket(_ context.Context, t ticketrepo.NewTicket) (bool, error) {
 	m.mu.Lock()

@@ -49,10 +49,21 @@ type Inbox interface {
 	PendingInbox(ctx context.Context, limit int) ([]ticketrepo.PendingInbox, error)
 	LoadInboxEvent(ctx context.Context, org, id uuid.UUID) (ticketrepo.InboxEvent, error)
 	MarkInbox(ctx context.Context, org, id uuid.UUID, outcome, dedupeKey, errMsg string) error
-	UpsertRepoForIntake(ctx context.Context, org uuid.UUID, ref intake.RepoRef) (uuid.UUID, error)
+	// EnabledRepoForIntake returns the repo when it is enabled on an active installation; reason
+	// is non-empty ("repo_not_enabled", "installation_inactive", "unknown_installation") otherwise.
+	EnabledRepoForIntake(ctx context.Context, org uuid.UUID, ref intake.RepoRef) (uuid.UUID, string, error)
 	CreateTicket(ctx context.Context, t ticketrepo.NewTicket) (bool, error)
 	GetTicket(ctx context.Context, org, id uuid.UUID) (ticketrepo.Ticket, error)
 	ListRepos(ctx context.Context, org uuid.UUID) ([]ticketrepo.Repo, error)
+}
+
+// Installations applies GitHub App installation lifecycle webhooks (installation,
+// installation_repositories) to the org's installation and repo rows.
+type Installations interface {
+	MarkInstallationUninstalled(ctx context.Context, org uuid.UUID, installationID int64) (bool, error)
+	SetInstallationSuspended(ctx context.Context, org uuid.UUID, installationID int64, suspended bool) error
+	UpdateInstallationAccess(ctx context.Context, org uuid.UUID, installationID int64, selection string, perms map[string]string) error
+	DisableReposByProviderID(ctx context.Context, org uuid.UUID, installationID int64, providerRepoIDs []int64) (int64, error)
 }
 
 // SentryRoutes resolves Sentry deliveries to tenants and repos. ticketrepo.Store implements it
@@ -63,7 +74,8 @@ type SentryRoutes interface {
 }
 
 var (
-	_ Store        = (*ticketrepo.Store)(nil)
-	_ Inbox        = (*ticketrepo.Store)(nil)
-	_ SentryRoutes = (*ticketrepo.Store)(nil)
+	_ Store         = (*ticketrepo.Store)(nil)
+	_ Inbox         = (*ticketrepo.Store)(nil)
+	_ SentryRoutes  = (*ticketrepo.Store)(nil)
+	_ Installations = (*ticketrepo.Store)(nil)
 )

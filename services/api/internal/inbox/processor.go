@@ -39,12 +39,14 @@ func TicketID(org uuid.UUID, src intake.Source, dedupeKey string) uuid.UUID {
 
 // Processor drains the inbox.
 type Processor struct {
-	Store      store.Inbox
-	Sentry     store.SentryRoutes
-	Normalizer intake.Registry
-	Engine     workflows.Engine
-	Events     events.Publisher
-	Logger     *slog.Logger
+	Store  store.Inbox
+	Sentry store.SentryRoutes
+	// Installations applies installation / installation_repositories webhooks (optional).
+	Installations store.Installations
+	Normalizer    intake.Registry
+	Engine        workflows.Engine
+	Events        events.Publisher
+	Logger        *slog.Logger
 
 	Caps                   budget.TicketCaps
 	MaxParallelTicketsOrg  int
@@ -164,6 +166,10 @@ func (p *Processor) Process(ctx context.Context, ev ticketrepo.InboxEvent) (stri
 // process also returns the issue-level dedupe key of the first intake (inbox_events.dedupe_key).
 func (p *Processor) process(ctx context.Context, ev ticketrepo.InboxEvent) (outcome, dedupe string, err error) {
 	p.init()
+	if ev.Source == string(intake.SourceGitHub) && (ev.EventType == "installation" || ev.EventType == "installation_repositories") {
+		o, err := p.lifecycle(ctx, ev)
+		return o, "", err
+	}
 	intakes, err := p.Normalizer.Normalize(ctx, intake.Source(ev.Source), ev.EventType, ev.Payload)
 	if errors.Is(err, intake.ErrIgnored) {
 		return "ignored", "", nil
@@ -246,12 +252,14 @@ func (p *Processor) create(ctx context.Context, ev ticketrepo.InboxEvent, in int
 		}
 		repoID = id
 	default:
-		id, err := p.Store.UpsertRepoForIntake(ctx, org, in.Repo)
-		if errors.Is(err, ticketrepo.ErrNotFound) {
-			return "ignored:unknown_installation", nil
-		}
+		// Only repos the workspace enabled (onboarding repo picker) on an active installation
+		// produce tickets.
+		id, reason, err := p.Store.EnabledRepoForIntake(ctx, org, in.Repo)
 		if err != nil {
 			return "", err
+		}
+		if reason != "" {
+			return "ignored:" + reason, nil
 		}
 		repoID = id
 	}

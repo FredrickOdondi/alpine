@@ -43,7 +43,8 @@ func (r *Store) ListRepos(ctx context.Context, org uuid.UUID) ([]Repo, error) {
 	var out []Repo
 	err := r.tenant(ctx, org, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT r.id, r.org_id, r.full_name, r.default_branch, i.installation_id, r.config_sha, r.created_at
-			FROM repos r JOIN scm_installations i ON i.id = r.installation_id ORDER BY r.full_name`)
+			FROM repos r JOIN scm_installations i ON i.id = r.installation_id
+			WHERE r.enabled AND r.deleted_at IS NULL AND i.uninstalled_at IS NULL ORDER BY r.full_name`)
 		if err != nil {
 			return err
 		}

@@ -42,6 +42,8 @@ tags:
   - name: metrics
   - name: events
   - name: webhooks
+  - name: integrations
+    description: GitHub App registration (operator), installation linking and repo enablement (customer onboarding)
 security:
   - cookieAuth: []
   - apiKeyAuth: []
@@ -965,6 +967,221 @@ paths:
               schema: { $ref: "#/components/schemas/BoardEvent" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/setup/github-app:
+    get:
+      tags: [integrations]
+      operationId: getGitHubAppSetup
+      summary: Platform GitHub App registration status (operator setup page)
+      description: |
+        Whether the platform GitHub App exists, where its credentials come from (db, file or env)
+        and whether the caller may (re)create it: an operator (PLATFORM_OPERATOR_EMAILS) or, while
+        no App exists and no operators are configured, any signed-in user (first-run bootstrap).
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubAppSetup" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/setup/github-app/manifest:
+    post:
+      tags: [integrations]
+      operationId: startGitHubAppManifest
+      summary: Build the App manifest and a single-use state for GitHub's manifest flow
+      description: |
+        Returns the github.com URL to POST the manifest to (as the form field `manifest`) and sets
+        the `alpine_gh_state` binding cookie. The browser then submits the form; GitHub shows the
+        "Create GitHub App" page and redirects to /v1/setup/github-app/callback.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GitHubAppManifestRequest" }
+      responses:
+        "200":
+          description: Manifest and where to post it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubAppManifestStart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/setup/github-app/callback:
+    get:
+      tags: [integrations]
+      operationId: gitHubAppManifestCallback
+      summary: GitHub manifest redirect; exchanges the code for the App's id, slug and secrets
+      description: |
+        Verifies the state (cookie-bound, single use, same user), calls
+        POST /app-manifests/{code}/conversions, stores the credentials (envelope-encrypted in the
+        DB, or a 0600 dev file without a KEK) and redirects to the SPA setup page.
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+      responses:
+        "302":
+          description: Redirect to APP_URL/setup/github-app?created=1 (or ?error=…)
+  /v1/integrations/github:
+    get:
+      tags: [integrations]
+      operationId: getGitHubIntegration
+      summary: The active org's GitHub connection (App availability and linked installations)
+      responses:
+        "200":
+          description: Integration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubIntegration" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/integrations/github/install:
+    post:
+      tags: [integrations]
+      operationId: startGitHubInstall
+      summary: Start "Connect GitHub" (install URL with a state tied to the org)
+      description: Sets the `alpine_gh_state` cookie and returns https://github.com/apps/<slug>/installations/new?state=…
+      responses:
+        "200":
+          description: Install URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RedirectURL" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: No GitHub App registered yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/github/setup:
+    get:
+      tags: [integrations]
+      operationId: gitHubInstallCallback
+      summary: GitHub App setup URL / OAuth callback after installing
+      description: |
+        Verifies the state (cookie-bound, single use, same user and org), proves the user can
+        access the installation (user-to-server OAuth code -> GET /user/installations), checks the
+        installation belongs to this App, links it to the org and redirects to the repo picker.
+      parameters:
+        - name: installation_id
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: setup_action
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+      responses:
+        "302":
+          description: Redirect to APP_URL/onboarding/repos?installation=… (or ?error=…)
+  /v1/integrations/github/installations/{installationId}:
+    delete:
+      tags: [integrations]
+      operationId: disconnectGitHubInstallation
+      summary: Disconnect an installation from this workspace (does not uninstall it on GitHub)
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      responses:
+        "204":
+          description: Disconnected; its repos are disabled
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/integrations/github/installations/{installationId}/repos:
+    get:
+      tags: [integrations]
+      operationId: listGitHubInstallationRepos
+      summary: Repositories the installation can access, with their enablement state
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      responses:
+        "200":
+          description: Repos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/GitHubRepoOption" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: GitHub call failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/integrations/github/installations/{installationId}/repos/{providerRepoId}:
+    put:
+      tags: [integrations]
+      operationId: setGitHubRepoEnabled
+      summary: Enable or disable a repo; enabling reads .alpine/factory.yaml from the default branch
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+        - name: providerRepoId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: New state (with a starter config when the repo has none)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubRepoOption" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: GitHub call failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/repos/{repoId}/starter-config:
+    post:
+      tags: [integrations]
+      operationId: openStarterConfigPullRequest
+      summary: Open a PR that adds the starter .alpine/factory.yaml (alpine/* branch; never merged by Alpine)
+      parameters:
+        - $ref: "#/components/parameters/RepoId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                yaml: { type: string, description: Edited starter config; validated before it is committed }
+      responses:
+        "201":
+          description: Pull request opened (or the existing open one)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarterConfigPullRequest" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: GitHub call failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/webhooks/github:
     post:
       tags: [webhooks]
@@ -1115,6 +1332,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    InstallationId:
+      name: installationId
+      in: path
+      required: true
+      description: GitHub App installation id
+      schema: { type: integer, format: int64 }
     RepoId:
       name: repoId
       in: path
@@ -1160,6 +1383,89 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    GitHubAppSetup:
+      type: object
+      required: [configured, canConfigure, webhookUrl, webhookViaProxy, permissions, events]
+      properties:
+        configured: { type: boolean }
+        source: { type: string, enum: [db, file, env], nullable: true }
+        appId: { type: integer, format: int64, nullable: true }
+        slug: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        htmlUrl: { type: string, nullable: true }
+        ownerLogin: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        canConfigure: { type: boolean, description: The caller may create or replace the App }
+        webhookUrl: { type: string, description: Where GitHub will deliver webhooks }
+        webhookViaProxy: { type: boolean, description: True when webhookUrl is a WEBHOOK_PROXY_URL relay (smee.io) }
+        permissions:
+          type: object
+          additionalProperties: { type: string }
+        events:
+          type: array
+          items: { type: string }
+    GitHubAppManifestRequest:
+      type: object
+      properties:
+        organization: { type: string, description: GitHub organization login to own the App (default the operator's personal account) }
+        name: { type: string, maxLength: 34 }
+    GitHubAppManifestStart:
+      type: object
+      required: [postUrl, manifest]
+      properties:
+        postUrl: { type: string, description: github.com URL to POST the form to (state included) }
+        manifest: { type: string, description: JSON manifest, sent as the form field "manifest" }
+    RedirectURL:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string }
+    GitHubInstallation:
+      type: object
+      required: [installationId, accountLogin, accountType, suspended, createdAt]
+      properties:
+        installationId: { type: integer, format: int64 }
+        accountLogin: { type: string }
+        accountType: { type: string, enum: [User, Organization] }
+        repositorySelection: { type: string, enum: [all, selected], nullable: true }
+        suspended: { type: boolean }
+        manageUrl: { type: string, nullable: true, description: GitHub page to change repository access }
+        enabledRepos: { type: integer }
+        createdAt: { type: string, format: date-time }
+    GitHubIntegration:
+      type: object
+      required: [appConfigured, installations]
+      properties:
+        appConfigured: { type: boolean }
+        appSlug: { type: string, nullable: true }
+        appHtmlUrl: { type: string, nullable: true }
+        installations:
+          type: array
+          items: { $ref: "#/components/schemas/GitHubInstallation" }
+    RepoConfigStatus:
+      type: string
+      enum: [unknown, configured, missing, invalid]
+    GitHubRepoOption:
+      type: object
+      required: [providerRepoId, fullName, private, defaultBranch, enabled, configStatus]
+      properties:
+        providerRepoId: { type: integer, format: int64 }
+        fullName: { type: string }
+        private: { type: boolean }
+        defaultBranch: { type: string }
+        enabled: { type: boolean }
+        repoId: { type: string, format: uuid, nullable: true }
+        configStatus: { $ref: "#/components/schemas/RepoConfigStatus" }
+        configSha: { type: string, nullable: true }
+        configError: { type: string, nullable: true }
+        starterYaml: { type: string, nullable: true, description: Starter .alpine/factory.yaml when configStatus is missing }
+    StarterConfigPullRequest:
+      type: object
+      required: [number, url, branch]
+      properties:
+        number: { type: integer }
+        url: { type: string }
+        branch: { type: string }
     Error:
       type: object
       required: [code, message]

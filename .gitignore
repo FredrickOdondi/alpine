@@ -34,3 +34,4 @@ go.work.sum.bak
 /services/api/seed
 /services/orchestrator/worker
 /services/runner/runner
+.alpine-local/

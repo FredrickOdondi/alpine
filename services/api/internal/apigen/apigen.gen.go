@@ -281,6 +281,63 @@ func (e GateStatus) Valid() bool {
 	}
 }
 
+// Defines values for GitHubAppSetupSource.
+const (
+	Db   GitHubAppSetupSource = "db"
+	Env  GitHubAppSetupSource = "env"
+	File GitHubAppSetupSource = "file"
+)
+
+// Valid indicates whether the value is a known member of the GitHubAppSetupSource enum.
+func (e GitHubAppSetupSource) Valid() bool {
+	switch e {
+	case Db:
+		return true
+	case Env:
+		return true
+	case File:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GitHubInstallationAccountType.
+const (
+	GitHubInstallationAccountTypeOrganization GitHubInstallationAccountType = "Organization"
+	GitHubInstallationAccountTypeUser         GitHubInstallationAccountType = "User"
+)
+
+// Valid indicates whether the value is a known member of the GitHubInstallationAccountType enum.
+func (e GitHubInstallationAccountType) Valid() bool {
+	switch e {
+	case GitHubInstallationAccountTypeOrganization:
+		return true
+	case GitHubInstallationAccountTypeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GitHubInstallationRepositorySelection.
+const (
+	GitHubInstallationRepositorySelectionAll      GitHubInstallationRepositorySelection = "all"
+	GitHubInstallationRepositorySelectionSelected GitHubInstallationRepositorySelection = "selected"
+)
+
+// Valid indicates whether the value is a known member of the GitHubInstallationRepositorySelection enum.
+func (e GitHubInstallationRepositorySelection) Valid() bool {
+	switch e {
+	case GitHubInstallationRepositorySelectionAll:
+		return true
+	case GitHubInstallationRepositorySelectionSelected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Degraded HealthStatus = "degraded"
@@ -536,6 +593,30 @@ func (e PullRequestState) Valid() bool {
 	case PullRequestStateMerged:
 		return true
 	case PullRequestStateOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepoConfigStatus.
+const (
+	RepoConfigStatusConfigured RepoConfigStatus = "configured"
+	RepoConfigStatusInvalid    RepoConfigStatus = "invalid"
+	RepoConfigStatusMissing    RepoConfigStatus = "missing"
+	RepoConfigStatusUnknown    RepoConfigStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the RepoConfigStatus enum.
+func (e RepoConfigStatus) Valid() bool {
+	switch e {
+	case RepoConfigStatusConfigured:
+		return true
+	case RepoConfigStatusInvalid:
+		return true
+	case RepoConfigStatusMissing:
+		return true
+	case RepoConfigStatusUnknown:
 		return true
 	default:
 		return false
@@ -835,25 +916,25 @@ func (e TicketSummarySource) Valid() bool {
 
 // Defines values for TicketType.
 const (
-	Bug      TicketType = "bug"
-	Feature  TicketType = "feature"
-	Noise    TicketType = "noise"
-	Question TicketType = "question"
-	Unknown  TicketType = "unknown"
+	TicketTypeBug      TicketType = "bug"
+	TicketTypeFeature  TicketType = "feature"
+	TicketTypeNoise    TicketType = "noise"
+	TicketTypeQuestion TicketType = "question"
+	TicketTypeUnknown  TicketType = "unknown"
 )
 
 // Valid indicates whether the value is a known member of the TicketType enum.
 func (e TicketType) Valid() bool {
 	switch e {
-	case Bug:
+	case TicketTypeBug:
 		return true
-	case Feature:
+	case TicketTypeFeature:
 		return true
-	case Noise:
+	case TicketTypeNoise:
 		return true
-	case Question:
+	case TicketTypeQuestion:
 		return true
-	case Unknown:
+	case TicketTypeUnknown:
 		return true
 	default:
 		return false
@@ -1214,6 +1295,93 @@ type GateSummary struct {
 	Warned int `json:"warned"`
 }
 
+// GitHubAppManifestRequest defines model for GitHubAppManifestRequest.
+type GitHubAppManifestRequest struct {
+	Name *string `json:"name,omitempty"`
+
+	// Organization GitHub organization login to own the App (default the operator's personal account)
+	Organization *string `json:"organization,omitempty"`
+}
+
+// GitHubAppManifestStart defines model for GitHubAppManifestStart.
+type GitHubAppManifestStart struct {
+	// Manifest JSON manifest
+	Manifest string `json:"manifest"`
+
+	// PostUrl github.com URL to POST the form to (state included)
+	PostUrl string `json:"postUrl"`
+}
+
+// GitHubAppSetup defines model for GitHubAppSetup.
+type GitHubAppSetup struct {
+	AppId *int64 `json:"appId,omitempty"`
+
+	// CanConfigure The caller may create or replace the App
+	CanConfigure bool                  `json:"canConfigure"`
+	Configured   bool                  `json:"configured"`
+	CreatedAt    *time.Time            `json:"createdAt,omitempty"`
+	Events       []string              `json:"events"`
+	HtmlUrl      *string               `json:"htmlUrl,omitempty"`
+	Name         *string               `json:"name,omitempty"`
+	OwnerLogin   *string               `json:"ownerLogin,omitempty"`
+	Permissions  map[string]string     `json:"permissions"`
+	Slug         *string               `json:"slug,omitempty"`
+	Source       *GitHubAppSetupSource `json:"source,omitempty"`
+
+	// WebhookUrl Where GitHub will deliver webhooks
+	WebhookUrl string `json:"webhookUrl"`
+
+	// WebhookViaProxy True when webhookUrl is a WEBHOOK_PROXY_URL relay (smee.io)
+	WebhookViaProxy bool `json:"webhookViaProxy"`
+}
+
+// GitHubAppSetupSource defines model for GitHubAppSetup.Source.
+type GitHubAppSetupSource string
+
+// GitHubInstallation defines model for GitHubInstallation.
+type GitHubInstallation struct {
+	AccountLogin   string                        `json:"accountLogin"`
+	AccountType    GitHubInstallationAccountType `json:"accountType"`
+	CreatedAt      time.Time                     `json:"createdAt"`
+	EnabledRepos   *int                          `json:"enabledRepos,omitempty"`
+	InstallationId int64                         `json:"installationId"`
+
+	// ManageUrl GitHub page to change repository access
+	ManageUrl           *string                                `json:"manageUrl,omitempty"`
+	RepositorySelection *GitHubInstallationRepositorySelection `json:"repositorySelection,omitempty"`
+	Suspended           bool                                   `json:"suspended"`
+}
+
+// GitHubInstallationAccountType defines model for GitHubInstallation.AccountType.
+type GitHubInstallationAccountType string
+
+// GitHubInstallationRepositorySelection defines model for GitHubInstallation.RepositorySelection.
+type GitHubInstallationRepositorySelection string
+
+// GitHubIntegration defines model for GitHubIntegration.
+type GitHubIntegration struct {
+	AppConfigured bool                 `json:"appConfigured"`
+	AppHtmlUrl    *string              `json:"appHtmlUrl,omitempty"`
+	AppSlug       *string              `json:"appSlug,omitempty"`
+	Installations []GitHubInstallation `json:"installations"`
+}
+
+// GitHubRepoOption defines model for GitHubRepoOption.
+type GitHubRepoOption struct {
+	ConfigError    *string             `json:"configError,omitempty"`
+	ConfigSha      *string             `json:"configSha,omitempty"`
+	ConfigStatus   RepoConfigStatus    `json:"configStatus"`
+	DefaultBranch  string              `json:"defaultBranch"`
+	Enabled        bool                `json:"enabled"`
+	FullName       string              `json:"fullName"`
+	Private        bool                `json:"private"`
+	ProviderRepoId int64               `json:"providerRepoId"`
+	RepoId         *openapi_types.UUID `json:"repoId,omitempty"`
+
+	// StarterYaml Starter .alpine/factory.yaml when configStatus is missing
+	StarterYaml *string `json:"starterYaml,omitempty"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	// Checks Example: {"postgres":"ok","redis":"ok","temporal":"ok"}
@@ -1443,6 +1611,11 @@ type PullRequestReviewRequestAction string
 // PullRequestState defines model for PullRequestState.
 type PullRequestState string
 
+// RedirectURL defines model for RedirectURL.
+type RedirectURL struct {
+	Url string `json:"url"`
+}
+
 // Repo defines model for Repo.
 type Repo struct {
 	// ConfigSha Commit sha of the .alpine/factory.yaml in use
@@ -1458,6 +1631,9 @@ type Repo struct {
 	Id                   openapi_types.UUID `json:"id"`
 	OrgId                openapi_types.UUID `json:"orgId"`
 }
+
+// RepoConfigStatus defines model for RepoConfigStatus.
+type RepoConfigStatus string
 
 // Review defines model for Review.
 type Review struct {
@@ -1516,6 +1692,13 @@ type StageTransition struct {
 
 	// ToStage Pipeline stage of a ticket (one Temporal workflow per ticket drives transitions).
 	ToStage Stage `json:"toStage"`
+}
+
+// StarterConfigPullRequest defines model for StarterConfigPullRequest.
+type StarterConfigPullRequest struct {
+	Branch string `json:"branch"`
+	Number int    `json:"number"`
+	Url    string `json:"url"`
 }
 
 // TicketAction approve / reject: decision on a `needs_human` ticket.
@@ -1671,6 +1854,9 @@ type WebhookAckStatus string
 // CsrfHeader defines model for CsrfHeader.
 type CsrfHeader = string
 
+// InstallationId defines model for InstallationId.
+type InstallationId = int64
+
 // InvitationId defines model for InvitationId.
 type InvitationId = openapi_types.UUID
 
@@ -1784,6 +1970,19 @@ type StreamEventsParams struct {
 	RepoId *openapi_types.UUID `form:"repoId,omitempty" json:"repoId,omitempty"`
 }
 
+// GitHubInstallCallbackParams defines parameters for GitHubInstallCallback.
+type GitHubInstallCallbackParams struct {
+	InstallationId *int64      `form:"installation_id,omitempty" json:"installation_id,omitempty"`
+	SetupAction    *string     `form:"setup_action,omitempty" json:"setup_action,omitempty"`
+	Code           *OAuthCode  `form:"code,omitempty" json:"code,omitempty"`
+	State          *OAuthState `form:"state,omitempty" json:"state,omitempty"`
+}
+
+// SetGitHubRepoEnabledJSONBody defines parameters for SetGitHubRepoEnabled.
+type SetGitHubRepoEnabledJSONBody struct {
+	Enabled bool `json:"enabled"`
+}
+
 // AcceptInvitationParams defines parameters for AcceptInvitation.
 type AcceptInvitationParams struct {
 	// XCSRFToken Required when authenticating with the session cookie (from GET /v1/auth/csrf or /v1/me).
@@ -1878,6 +2077,18 @@ type ListPullRequestsParams struct {
 	State *PullRequestState `form:"state,omitempty" json:"state,omitempty"`
 }
 
+// OpenStarterConfigPullRequestJSONBody defines parameters for OpenStarterConfigPullRequest.
+type OpenStarterConfigPullRequestJSONBody struct {
+	// Yaml Edited starter config; validated before it is committed
+	Yaml *string `json:"yaml,omitempty"`
+}
+
+// GitHubAppManifestCallbackParams defines parameters for GitHubAppManifestCallback.
+type GitHubAppManifestCallbackParams struct {
+	Code  *OAuthCode  `form:"code,omitempty" json:"code,omitempty"`
+	State *OAuthState `form:"state,omitempty" json:"state,omitempty"`
+}
+
 // ListTicketsParams defines parameters for ListTickets.
 type ListTicketsParams struct {
 	RepoId *openapi_types.UUID `form:"repoId,omitempty" json:"repoId,omitempty"`
@@ -1917,6 +2128,9 @@ type RequestMagicLinkJSONRequestBody = MagicLinkRequest
 // VerifyMagicLinkJSONRequestBody defines body for VerifyMagicLink for application/json ContentType.
 type VerifyMagicLinkJSONRequestBody = TokenRequest
 
+// SetGitHubRepoEnabledJSONRequestBody defines body for SetGitHubRepoEnabled for application/json ContentType.
+type SetGitHubRepoEnabledJSONRequestBody SetGitHubRepoEnabledJSONBody
+
 // AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
 type AcceptInvitationJSONRequestBody = TokenRequest
 
@@ -1940,6 +2154,12 @@ type UpdateMemberJSONRequestBody = UpdateMemberRequest
 
 // ReviewPullRequestJSONRequestBody defines body for ReviewPullRequest for application/json ContentType.
 type ReviewPullRequestJSONRequestBody = PullRequestReviewRequest
+
+// OpenStarterConfigPullRequestJSONRequestBody defines body for OpenStarterConfigPullRequest for application/json ContentType.
+type OpenStarterConfigPullRequestJSONRequestBody OpenStarterConfigPullRequestJSONBody
+
+// StartGitHubAppManifestJSONRequestBody defines body for StartGitHubAppManifest for application/json ContentType.
+type StartGitHubAppManifestJSONRequestBody = GitHubAppManifestRequest
 
 // PostTicketActionJSONRequestBody defines body for PostTicketAction for application/json ContentType.
 type PostTicketActionJSONRequestBody = TicketActionRequest
@@ -1994,6 +2214,24 @@ type ServerInterface interface {
 	// StreamEvents Live board updates (Server-Sent Events)
 	// (GET /v1/events)
 	StreamEvents(w http.ResponseWriter, r *http.Request, params StreamEventsParams)
+	// GitHubInstallCallback GitHub App setup URL / OAuth callback after installing
+	// (GET /v1/github/setup)
+	GitHubInstallCallback(w http.ResponseWriter, r *http.Request, params GitHubInstallCallbackParams)
+	// GetGitHubIntegration The active org's GitHub connection (App availability and linked installations)
+	// (GET /v1/integrations/github)
+	GetGitHubIntegration(w http.ResponseWriter, r *http.Request)
+	// StartGitHubInstall Start "Connect GitHub" (install URL with a state tied to the org)
+	// (POST /v1/integrations/github/install)
+	StartGitHubInstall(w http.ResponseWriter, r *http.Request)
+	// DisconnectGitHubInstallation Disconnect an installation from this workspace (does not uninstall it on GitHub)
+	// (DELETE /v1/integrations/github/installations/{installationId})
+	DisconnectGitHubInstallation(w http.ResponseWriter, r *http.Request, installationId InstallationId)
+	// ListGitHubInstallationRepos Repositories the installation can access, with their enablement state
+	// (GET /v1/integrations/github/installations/{installationId}/repos)
+	ListGitHubInstallationRepos(w http.ResponseWriter, r *http.Request, installationId InstallationId)
+	// SetGitHubRepoEnabled Enable or disable a repo; enabling reads .alpine/factory.yaml from the default branch
+	// (PUT /v1/integrations/github/installations/{installationId}/repos/{providerRepoId})
+	SetGitHubRepoEnabled(w http.ResponseWriter, r *http.Request, installationId InstallationId, providerRepoId int64)
 	// AcceptInvitation Accept an invitation (the signed-in user's verified email must match)
 	// (POST /v1/invitations/accept)
 	AcceptInvitation(w http.ResponseWriter, r *http.Request, params AcceptInvitationParams)
@@ -2069,9 +2307,21 @@ type ServerInterface interface {
 	// GetRepoConfig The repo's .alpine/factory.yaml as read from the default branch, with validation
 	// (GET /v1/repos/{repoId}/config)
 	GetRepoConfig(w http.ResponseWriter, r *http.Request, repoId RepoId)
+	// OpenStarterConfigPullRequest Open a PR that adds the starter .alpine/factory.yaml (alpine/* branch; never merged by Alpine)
+	// (POST /v1/repos/{repoId}/starter-config)
+	OpenStarterConfigPullRequest(w http.ResponseWriter, r *http.Request, repoId RepoId)
 	// ListRunTurns Agent turns within a run
 	// (GET /v1/runs/{runId}/turns)
 	ListRunTurns(w http.ResponseWriter, r *http.Request, runId RunId)
+	// GetGitHubAppSetup Platform GitHub App registration status (operator setup page)
+	// (GET /v1/setup/github-app)
+	GetGitHubAppSetup(w http.ResponseWriter, r *http.Request)
+	// GitHubAppManifestCallback GitHub manifest redirect; exchanges the code for the App's id, slug and secrets
+	// (GET /v1/setup/github-app/callback)
+	GitHubAppManifestCallback(w http.ResponseWriter, r *http.Request, params GitHubAppManifestCallbackParams)
+	// StartGitHubAppManifest Build the App manifest and a single-use state for GitHub's manifest flow
+	// (POST /v1/setup/github-app/manifest)
+	StartGitHubAppManifest(w http.ResponseWriter, r *http.Request)
 	// ListTickets Tickets for the pipeline board
 	// (GET /v1/tickets)
 	ListTickets(w http.ResponseWriter, r *http.Request, params ListTicketsParams)
@@ -2186,6 +2436,42 @@ func (_ Unimplemented) GetAuthProviders(w http.ResponseWriter, r *http.Request) 
 // StreamEvents Live board updates (Server-Sent Events)
 // (GET /v1/events)
 func (_ Unimplemented) StreamEvents(w http.ResponseWriter, r *http.Request, params StreamEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GitHubInstallCallback GitHub App setup URL / OAuth callback after installing
+// (GET /v1/github/setup)
+func (_ Unimplemented) GitHubInstallCallback(w http.ResponseWriter, r *http.Request, params GitHubInstallCallbackParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGitHubIntegration The active org's GitHub connection (App availability and linked installations)
+// (GET /v1/integrations/github)
+func (_ Unimplemented) GetGitHubIntegration(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StartGitHubInstall Start "Connect GitHub" (install URL with a state tied to the org)
+// (POST /v1/integrations/github/install)
+func (_ Unimplemented) StartGitHubInstall(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DisconnectGitHubInstallation Disconnect an installation from this workspace (does not uninstall it on GitHub)
+// (DELETE /v1/integrations/github/installations/{installationId})
+func (_ Unimplemented) DisconnectGitHubInstallation(w http.ResponseWriter, r *http.Request, installationId InstallationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListGitHubInstallationRepos Repositories the installation can access, with their enablement state
+// (GET /v1/integrations/github/installations/{installationId}/repos)
+func (_ Unimplemented) ListGitHubInstallationRepos(w http.ResponseWriter, r *http.Request, installationId InstallationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SetGitHubRepoEnabled Enable or disable a repo; enabling reads .alpine/factory.yaml from the default branch
+// (PUT /v1/integrations/github/installations/{installationId}/repos/{providerRepoId})
+func (_ Unimplemented) SetGitHubRepoEnabled(w http.ResponseWriter, r *http.Request, installationId InstallationId, providerRepoId int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2339,9 +2625,33 @@ func (_ Unimplemented) GetRepoConfig(w http.ResponseWriter, r *http.Request, rep
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// OpenStarterConfigPullRequest Open a PR that adds the starter .alpine/factory.yaml (alpine/* branch; never merged by Alpine)
+// (POST /v1/repos/{repoId}/starter-config)
+func (_ Unimplemented) OpenStarterConfigPullRequest(w http.ResponseWriter, r *http.Request, repoId RepoId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListRunTurns Agent turns within a run
 // (GET /v1/runs/{runId}/turns)
 func (_ Unimplemented) ListRunTurns(w http.ResponseWriter, r *http.Request, runId RunId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGitHubAppSetup Platform GitHub App registration status (operator setup page)
+// (GET /v1/setup/github-app)
+func (_ Unimplemented) GetGitHubAppSetup(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GitHubAppManifestCallback GitHub manifest redirect; exchanges the code for the App's id, slug and secrets
+// (GET /v1/setup/github-app/callback)
+func (_ Unimplemented) GitHubAppManifestCallback(w http.ResponseWriter, r *http.Request, params GitHubAppManifestCallbackParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StartGitHubAppManifest Build the App manifest and a single-use state for GitHub's manifest flow
+// (POST /v1/setup/github-app/manifest)
+func (_ Unimplemented) StartGitHubAppManifest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2849,6 +3159,193 @@ func (siw *ServerInterfaceWrapper) StreamEvents(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StreamEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GitHubInstallCallback operation middleware
+func (siw *ServerInterfaceWrapper) GitHubInstallCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GitHubInstallCallbackParams
+
+	// ------------- Optional query parameter "installation_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "installation_id", r.URL.Query(), &params.InstallationId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "installation_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "installation_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "setup_action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "setup_action", r.URL.Query(), &params.SetupAction, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "setup_action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "setup_action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GitHubInstallCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGitHubIntegration operation middleware
+func (siw *ServerInterfaceWrapper) GetGitHubIntegration(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGitHubIntegration(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartGitHubInstall operation middleware
+func (siw *ServerInterfaceWrapper) StartGitHubInstall(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartGitHubInstall(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisconnectGitHubInstallation operation middleware
+func (siw *ServerInterfaceWrapper) DisconnectGitHubInstallation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "installationId" -------------
+	var installationId InstallationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "installationId", chi.URLParam(r, "installationId"), &installationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "installationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisconnectGitHubInstallation(w, r, installationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGitHubInstallationRepos operation middleware
+func (siw *ServerInterfaceWrapper) ListGitHubInstallationRepos(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "installationId" -------------
+	var installationId InstallationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "installationId", chi.URLParam(r, "installationId"), &installationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "installationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGitHubInstallationRepos(w, r, installationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetGitHubRepoEnabled operation middleware
+func (siw *ServerInterfaceWrapper) SetGitHubRepoEnabled(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "installationId" -------------
+	var installationId InstallationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "installationId", chi.URLParam(r, "installationId"), &installationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "installationId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "providerRepoId" -------------
+	var providerRepoId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "providerRepoId", chi.URLParam(r, "providerRepoId"), &providerRepoId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "providerRepoId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetGitHubRepoEnabled(w, r, installationId, providerRepoId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3818,6 +4315,32 @@ func (siw *ServerInterfaceWrapper) GetRepoConfig(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// OpenStarterConfigPullRequest operation middleware
+func (siw *ServerInterfaceWrapper) OpenStarterConfigPullRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoId" -------------
+	var repoId RepoId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoId", chi.URLParam(r, "repoId"), &repoId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenStarterConfigPullRequest(w, r, repoId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRunTurns operation middleware
 func (siw *ServerInterfaceWrapper) ListRunTurns(w http.ResponseWriter, r *http.Request) {
 
@@ -3835,6 +4358,80 @@ func (siw *ServerInterfaceWrapper) ListRunTurns(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListRunTurns(w, r, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGitHubAppSetup operation middleware
+func (siw *ServerInterfaceWrapper) GetGitHubAppSetup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGitHubAppSetup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GitHubAppManifestCallback operation middleware
+func (siw *ServerInterfaceWrapper) GitHubAppManifestCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GitHubAppManifestCallbackParams
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GitHubAppManifestCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartGitHubAppManifest operation middleware
+func (siw *ServerInterfaceWrapper) StartGitHubAppManifest(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartGitHubAppManifest(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4529,6 +5126,36 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/events", wrapper.StreamEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/setup/github-app", wrapper.GetGitHubAppSetup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/setup/github-app/manifest", wrapper.StartGitHubAppManifest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/setup/github-app/callback", wrapper.GitHubAppManifestCallback)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/integrations/github", wrapper.GetGitHubIntegration)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/integrations/github/install", wrapper.StartGitHubInstall)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/github/setup", wrapper.GitHubInstallCallback)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v1/integrations/github/installations/{installationId}", wrapper.DisconnectGitHubInstallation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/integrations/github/installations/{installationId}/repos", wrapper.ListGitHubInstallationRepos)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/v1/integrations/github/installations/{installationId}/repos/{providerRepoId}", wrapper.SetGitHubRepoEnabled)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/repos/{repoId}/starter-config", wrapper.OpenStarterConfigPullRequest)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/webhooks/github", wrapper.ReceiveGithubWebhook)
