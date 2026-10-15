@@ -54,6 +54,10 @@ type flow struct {
 	headSHA     string
 	// visualReview: a gate (visual diff above threshold) requires human approval of the PR.
 	visualReview bool
+	// Evidence for the PR body.
+	implSummary   string
+	gateSummaries []string
+	review        activities.ReviewResult
 }
 
 // TicketWorkflow drives one ticket: triage → refinement → prioritize → implement ⇄ gates →
@@ -335,16 +339,22 @@ func (f *flow) build() phase {
 			if ex := caps.Exceeded(f.state.Usage); ex != nil {
 				return fail(ex.Reason())
 			}
-			return fail("implementer stopped without producing a change for gates")
+			reason := "implementer stopped without producing a change for gates"
+			if impl.StopReason != "" {
+				reason += " (" + impl.StopReason + ")"
+			}
+			return fail(reason)
 		}
+		f.implSummary = impl.Summary
 
 		f.setStage(ticket.StageGates, "", "system")
 		iteration := f.state.Usage.GateIterations + 1
 		var gr activities.GatesResult
-		if err := workflow.ExecuteActivity(f.gates(), a.RunGates, activities.GatesInput{Ref: f.ref, RunID: f.runID, Iteration: iteration, HeadSHA: impl.HeadSHA, BaseSHA: impl.BaseSHA}).Get(f.ctx, &gr); err != nil {
+		if err := workflow.ExecuteActivity(f.gates(), a.RunGates, activities.GatesInput{Ref: f.ref, RunID: f.runID, Iteration: iteration, HeadSHA: impl.HeadSHA, BaseSHA: impl.BaseSHA, RepoDir: impl.RepoDir}).Get(f.ctx, &gr); err != nil {
 			return fail(errReason("gates", err))
 		}
 		f.state.Usage.GateIterations = iteration
+		f.gateSummaries = append(f.gateSummaries, gr.Summary)
 		if !gr.Green {
 			feedback = gr.Failures
 			reviewFeedback = nil
@@ -356,11 +366,12 @@ func (f *flow) build() phase {
 		f.setStage(ticket.StageReview, gr.Summary, "agent:reviewer")
 		var rev activities.ReviewResult
 		if err := workflow.ExecuteActivity(f.agent(20*time.Minute, 0), a.Review, activities.ReviewInput{
-			Ref: f.ref, HeadSHA: impl.HeadSHA, AcceptanceCriteria: f.refine.AcceptanceCriteria, BlastRadius: f.br,
+			Ref: f.ref, HeadSHA: impl.HeadSHA, BaseSHA: impl.BaseSHA, RepoDir: impl.RepoDir, AcceptanceCriteria: f.refine.AcceptanceCriteria, BlastRadius: f.br,
 		}).Get(f.ctx, &rev); err != nil {
 			return fail(errReason("review", err))
 		}
 		f.addUsage(rev.Usage)
+		f.review = rev
 		if rev.RaiseBR > f.br {
 			f.br = rev.RaiseBR
 		}
@@ -380,6 +391,40 @@ func (f *flow) build() phase {
 			return fail("reviewer escalated: " + rev.Summary)
 		}
 	}
+}
+
+// prBody is the PR description: what changed, acceptance criteria, gate and review evidence, and
+// spend. Built from recorded activity results only (deterministic).
+func (f *flow) prBody(br int, mode string) string {
+	var b strings.Builder
+	b.WriteString("## Summary\n")
+	if f.implSummary != "" {
+		b.WriteString(f.implSummary + "\n")
+	} else {
+		b.WriteString("(no implementer summary)\n")
+	}
+	if len(f.refine.AcceptanceCriteria) > 0 {
+		b.WriteString("\n## Acceptance criteria\n")
+		for _, ac := range f.refine.AcceptanceCriteria {
+			b.WriteString("- " + ac + "\n")
+		}
+	}
+	b.WriteString("\n## Gates\n")
+	for _, g := range f.gateSummaries {
+		b.WriteString("- " + g + "\n")
+	}
+	fmt.Fprintf(&b, "\n## Independent review\nVerdict: **%s**", f.review.Verdict)
+	if f.review.Summary != "" {
+		b.WriteString(" — " + f.review.Summary)
+	}
+	b.WriteString("\n")
+	for _, fd := range f.review.Findings {
+		b.WriteString("- " + fd + "\n")
+	}
+	fmt.Fprintf(&b, "\n## Factory run\nBlast radius: BR%d (%s merge) · Turns: %d · Gate iterations: %d · Tokens: %d · Cost: $%.4f\n",
+		br, mode, f.state.Usage.Turns, f.state.Usage.GateIterations, f.state.Usage.Tokens, f.state.Usage.CostUSD)
+	b.WriteString("\n_Opened by Alpine. A human reviews and merges._\n")
+	return b.String()
 }
 
 func implementReason(feedback []gate.Finding, review []string) string {
@@ -407,7 +452,7 @@ func (f *flow) merge() phase {
 	step := fmt.Sprintf("%s/pr/attempt-%d", workflow.GetInfo(f.ctx).WorkflowExecution.ID, f.state.Attempt)
 	err := workflow.ExecuteActivity(f.agent(10*time.Minute, 0), a.OpenPullRequest, activities.PRInput{
 		Ref: f.ref, StepKey: step, HeadSHA: f.headSHA, BlastRadius: br,
-		Summary: fmt.Sprintf("Turns: %d · Gate iterations: %d · Cost: $%.2f", f.state.Usage.Turns, f.state.Usage.GateIterations, f.state.Usage.CostUSD),
+		Summary: f.prBody(br, mode),
 	}).Get(f.ctx, &pr)
 	if err != nil {
 		return f.escalate(errReason("open pull request", err), phaseMerge)

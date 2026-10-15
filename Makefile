@@ -1,6 +1,8 @@
 # Alpine dev tasks. Requires Docker, Go 1.26+ (auto toolchain), Node 22 + pnpm.
 SHELL := /bin/bash
 -include .env
+# Live-mode overrides (cp .env.live.example .env.live); git-ignored.
+-include .env.live
 export
 
 GO_MODULES := packages/shared packages/agents packages/gates services/api services/integrations services/orchestrator services/runner

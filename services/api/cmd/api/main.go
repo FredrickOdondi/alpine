@@ -100,8 +100,10 @@ func run(logger *slog.Logger) error {
 
 	proc := &inbox.Processor{
 		Store: st, Sentry: st, Engine: engine, Events: bus, Logger: logger,
-		Normalizer:             inbox.Normalizers(gh.BotLogin),
-		Caps:                   budget.TicketCaps{},
+		Normalizer: inbox.Normalizers(gh.BotLogin),
+		// Per-ticket hard caps (0 = platform default: 100 turns, 15 gate runs, $20).
+		Caps: budget.TicketCaps{MaxTurns: config.Int("TICKET_MAX_TURNS", 0), MaxGateIterations: config.Int("TICKET_MAX_GATE_ITERATIONS", 0),
+			MaxCostUSD: config.Float("TICKET_MAX_COST_USD", 0), MaxTokens: int64(config.Int("TICKET_MAX_TOKENS", 0))},
 		MaxParallelTicketsOrg:  llmCfg.MaxParallelTicketsOrg,
 		MaxParallelTicketsRepo: llmCfg.MaxParallelTicketsRepo,
 	}

@@ -3,6 +3,7 @@ module github.com/alpine-dev/alpine/services/orchestrator
 go 1.26.0
 
 require (
+	github.com/alpine-dev/alpine/services/runner v0.0.0
 	github.com/alpine-dev/alpine/packages/agents v0.0.0
 	github.com/alpine-dev/alpine/packages/shared v0.0.0
 	github.com/google/uuid v1.6.0
@@ -75,3 +76,5 @@ replace (
 replace github.com/alpine-dev/alpine/services/integrations => ../integrations
 
 replace github.com/alpine-dev/alpine/packages/gates => ../../packages/gates
+
+replace github.com/alpine-dev/alpine/services/runner => ../runner

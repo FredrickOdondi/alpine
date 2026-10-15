@@ -95,15 +95,35 @@ type SCMPullRequest struct {
 	Reused  bool
 }
 
+// Workspaces opens per-ticket checkouts for the live implementer (internal/workspace).
+type Workspaces interface {
+	Open(ctx context.Context, ticketULID, repoFullName, branch, base string) (Checkout, error)
+	// Diff is `git diff base..head` in a checkout directory (for the reviewer).
+	Diff(ctx context.Context, dir, base, head string, maxBytes int) (string, error)
+}
+
+// Checkout is one ticket's working tree plus its command sandbox.
+type Checkout interface {
+	agents.Workspace
+	Dir() string
+	BaseSHA(ctx context.Context) (string, error)
+	Commit(ctx context.Context, msg string) (sha string, changed bool, err error)
+	Push(ctx context.Context, branch string) error
+	Close(ctx context.Context) error
+}
+
 // Activities is registered on the worker. All dependencies are interfaces.
 type Activities struct {
 	Repo   Repository
 	Agents agents.Agents
 	Gates  gate.Runner
 	SCM    SCM
-	Slots  SlotManager
-	Events events.Publisher
-	Logger *slog.Logger
+	// Workspaces enables the real implementer loop (with an agents.ToolLoop engine) and real
+	// diffs for the reviewer. Nil: the Phase 0 single-call implementer.
+	Workspaces Workspaces
+	Slots      SlotManager
+	Events     events.Publisher
+	Logger     *slog.Logger
 	// SlotLease bounds how long a crashed workflow can hold a ticket slot.
 	SlotLease time.Duration
 	// SlotPoll is how often AcquireTicketSlot retries while waiting.
@@ -197,6 +217,9 @@ func (a *Activities) spend(ctx context.Context, ref Ref, cost float64, u llm.Usa
 	if replayed {
 		return out
 	}
+	if cost > 0 || u.Total() > 0 {
+		a.log().InfoContext(ctx, "agent spend", "ticket", ref.TicketID, "tokens_in", u.InputTokens, "tokens_out", u.OutputTokens, "cost_usd", cost)
+	}
 	org, tid, err := ids(ref)
 	if err == nil {
 		if err := a.Repo.AddTicketCost(ctx, org, tid, cost, u.Total()); err != nil {
@@ -263,9 +286,25 @@ func (a *Activities) Triage(ctx context.Context, ref Ref) (TriageResult, error) 
 
 // Refine produces the refined ticket and estimates.
 func (a *Activities) Refine(ctx context.Context, ref Ref) (RefineResult, error) {
-	in, _, err := a.ticketInput(ctx, ref)
+	in, t, err := a.ticketInput(ctx, ref)
 	if err != nil {
 		return RefineResult{}, err
+	}
+	// With live workspaces, refinement reads the repo at the base branch to confirm the bug.
+	if a.Workspaces != nil && t.RepoFullName != "" {
+		_, tid, _ := ids(ref)
+		base := t.DefaultBranch
+		if base == "" {
+			base = "main"
+		}
+		if branch, err := a.branchName(tid, t.Title); err == nil {
+			if co, err := a.Workspaces.Open(ctx, ticketflow.TicketULID(tid), t.RepoFullName, branch, base); err == nil {
+				in.RepoContext = repoContext(ctx, co, t.Title, t.Body, 24_000)
+				_ = co.Close(ctx)
+			} else {
+				a.log().WarnContext(ctx, "refine: repo context unavailable", "err", err)
+			}
+		}
 	}
 	r, err := a.Agents.Refine(ctx, agents.Call{Tenant: a.tenant(ref), IdempotencyKey: idemKey(ctx)}, in, agents.TriageOutput{Classification: "bug"})
 	if err != nil {
@@ -396,9 +435,17 @@ func (a *Activities) Review(ctx context.Context, in ReviewInput) (ReviewResult, 
 	if err != nil {
 		return ReviewResult{}, err
 	}
-	// Phase 0: the diff/rules/module map come from the runner + repo in Phase 1.
+	// The reviewer sees the real diff of the work branch (never the implementer transcript).
+	diff := "(diff of " + in.HeadSHA + ")"
+	if a.Workspaces != nil && in.RepoDir != "" && in.BaseSHA != "" {
+		d, err := a.Workspaces.Diff(ctx, in.RepoDir, in.BaseSHA, in.HeadSHA, 60_000)
+		if err != nil {
+			return ReviewResult{}, fmt.Errorf("review diff: %w", err)
+		}
+		diff = d
+	}
 	r, err := a.Agents.Review(ctx, agents.Call{Tenant: a.tenant(in.Ref), IdempotencyKey: idemKey(ctx)}, agents.ReviewInput{
-		Ticket: ti, AcceptanceCriteria: in.AcceptanceCriteria, Diff: "(diff of " + in.HeadSHA + ")", BlastRadius: in.BlastRadius,
+		Ticket: ti, AcceptanceCriteria: in.AcceptanceCriteria, Diff: diff, BlastRadius: in.BlastRadius,
 	})
 	if err != nil {
 		return ReviewResult{}, classify(err)
@@ -465,8 +512,12 @@ func (a *Activities) OpenPullRequest(ctx context.Context, in PRInput) (PRResult,
 	if _, err := a.SCM.CreateBranchFrom(ctx, t.RepoFullName, branch, base); err != nil {
 		return PRResult{}, err
 	}
+	body := in.Summary
+	if issue := t.IssueNumber(); issue > 0 {
+		body = fmt.Sprintf("Fixes #%d\n\n%s", issue, body)
+	}
 	pr, err := a.SCM.CreatePullRequest(ctx, t.RepoFullName, SCMNewPullRequest{
-		Title: "[" + t.Key + "] " + t.Title, Head: branch, Base: base, Body: in.Summary,
+		Title: "[" + t.Key + "] " + t.Title, Head: branch, Base: base, Body: body,
 		Labels: []string{"alpine", fmt.Sprintf("blast-radius:%d", max(1, in.BlastRadius))},
 	})
 	if err != nil {

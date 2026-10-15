@@ -24,6 +24,20 @@ type Spec struct {
 	Network bool
 	// Workdir is the default working directory for Exec.
 	Workdir string
+	// Mounts bind host directories into the sandbox (Docker runner only; local dev). The
+	// implementer's checkout is mounted read-write at its Workdir so host-side file tools and
+	// sandboxed commands see the same tree.
+	Mounts []Mount
+	// User runs sandbox processes as uid[:gid] (Docker runner), so files written through a mount
+	// keep the host user's ownership.
+	User string
+}
+
+// Mount is a bind mount.
+type Mount struct {
+	Source   string // host path
+	Target   string // sandbox path
+	ReadOnly bool
 }
 
 // Command is one process execution.

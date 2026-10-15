@@ -20,6 +20,12 @@ func TestCreateArgsAreLockedDown(t *testing.T) {
 			t.Errorf("missing %q in %s", want, args)
 		}
 	}
+	m := strings.Join(r.CreateArgs(runner.Spec{User: "1000:1000", Mounts: []runner.Mount{{Source: "/tmp/w", Target: "/work"}, {Source: "/c", Target: "/cache", ReadOnly: true}}}), " ")
+	for _, want := range []string{"--user 1000:1000", "--mount type=bind,source=/tmp/w,target=/work", "--mount type=bind,source=/c,target=/cache,readonly"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("missing %q in %s", want, m)
+		}
+	}
 	if strings.Contains(strings.Join(r.CreateArgs(runner.Spec{Network: true}), " "), "--network none") {
 		t.Error("network should be enabled when requested")
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 )
 
 // Price is USD per 1M tokens.
@@ -25,13 +26,22 @@ var DefaultPricing = Pricing{
 	"gpt-4.1":      {InputPerMTok: 2, CachedInputPerMTok: 0.5, OutputPerMTok: 8},
 	"gpt-4.1-mini": {InputPerMTok: 0.4, CachedInputPerMTok: 0.1, OutputPerMTok: 1.6},
 	"o3":           {InputPerMTok: 2, CachedInputPerMTok: 0.5, OutputPerMTok: 8},
+	"gpt-4.1-nano": {InputPerMTok: 0.1, CachedInputPerMTok: 0.025, OutputPerMTok: 0.4},
+	"gpt-4o-mini":  {InputPerMTok: 0.15, CachedInputPerMTok: 0.075, OutputPerMTok: 0.6},
+	"o4-mini":      {InputPerMTok: 1.1, CachedInputPerMTok: 0.275, OutputPerMTok: 4.4},
 }
+
+// dated matches the "-YYYY-MM-DD" snapshot suffix OpenAI returns in response.model.
+var dated = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}$`)
 
 // Cost computes the USD cost of usage on model; unknown models cost 0 (and are logged by the caller).
 func (p Pricing) Cost(model string, u Usage) (float64, bool) {
 	pr, ok := p[model]
 	if !ok {
-		return 0, false
+		// Responses name the dated snapshot (gpt-4.1-2025-04-14); price it as its alias.
+		if pr, ok = p[dated.ReplaceAllString(model, "")]; !ok {
+			return 0, false
+		}
 	}
 	uncached := u.InputTokens - u.CachedTokens
 	if uncached < 0 {

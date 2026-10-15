@@ -63,6 +63,9 @@ type TicketInput struct {
 	RepoFullName string   `json:"repoFullName"`
 	// OpenTickets are candidate duplicates ("externalId: title"), from pgvector search.
 	OpenTickets []string `json:"openTickets,omitempty"`
+	// RepoContext is a read-only snapshot of the repository at the base branch (file list plus
+	// the most relevant source files), given to refinement so it can confirm the bug in code.
+	RepoContext string `json:"repoContext,omitempty"`
 }
 
 // TriageOutput is the triage agent's structured output.

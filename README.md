@@ -96,9 +96,51 @@ make web-live                   # SPA against the live API (Vite proxies /v1 -> 
   Generate `SESSION_SECRET` and `API_KEY_PEPPER` with `openssl rand -base64 48`.
 
 **Env switches (all default to stubs, so nothing calls OpenAI or GitHub):**
-`ALPINE_AGENT_MODE=stub|llm`, `SCM=stub|github` (needs `GITHUB_APP_ID`, `GITHUB_APP_BOT_LOGIN`,
+`ALPINE_AGENT_MODE=stub|llm|live`, `SCM=stub|github|gh` (needs `GITHUB_APP_ID`, `GITHUB_APP_BOT_LOGIN`,
 `GITHUB_APP_PRIVATE_KEY_FILE`), `GATES=stub|real` (needs a ticket checkout; gates-only values via
 `GATES_ENV_<NAME>`), `RUNNER=docker|e2b`, `AUTH_DEV_STUB`, `VITE_API_MODE=mock|live`.
+
+**Live mode: let the factory fix a real bug and open a real PR.** Agents call OpenAI (structured
+outputs), the implementer edits a clone of the repo and runs commands in an offline Docker sandbox,
+the repo's `.alpine/factory.yaml` gates run on that checkout (failures go back to the implementer),
+an independent reviewer on a different model reads the real diff, and `SCM=gh` pushes
+`alpine/<ulid>-<slug>` and opens a PR with your `gh` login, but only on `SCM_GH_ALLOWED_REPOS`. Nothing is merged.
+
+| Variable | Live value | Notes |
+|---|---|---|
+| `ALPINE_AGENT_MODE` | `live` | `llm` keeps the stub implementer |
+| `LLM_PROVIDER` | `openai` | `litellm` (default) goes through `LLM_BASE_URL` (`docker compose --profile llm up -d`) |
+| `OPENAI_API_KEY` | export in your shell | never in a committed file; keep it commented in `.env` |
+| `LLM_MODELS_<STAGE>` | triage/refine/prioritize/review `gpt-4.1-mini`, implement `gpt-4.1` | the reviewer must differ from the implementer |
+| `LLM_MAX_OUTPUT_TOKENS_<STAGE>` | 800 / 1500 / 600 / 4000 / 1500 | per-call output cap |
+| `TICKET_MAX_TURNS`, `TICKET_MAX_GATE_ITERATIONS`, `TICKET_MAX_COST_USD`, `TICKET_MAX_TOKENS` | 25, 3, 1.50, 800000 | per-ticket caps (the repo's factory.yaml limits apply too) |
+| `BUDGET_ORG_DAILY_USD`, `BUDGET_ORG_MONTHLY_USD` | 3, 10 | org budget |
+| `SCM`, `SCM_GH_ALLOWED_REPOS` | `gh`, `you/alpine-testbed` | any other repo is refused before gh runs |
+| `GATES` | `real` | |
+| `IMPLEMENTER_IMAGE`, `WORKSPACE_ROOT`, `IMPLEMENTER_COMMAND_TIMEOUT`, `RUNNER_DOCKER_BIN` | `golang:1.26-alpine`, `/tmp/alpine-workspaces`, `3m`, `docker` | sandbox: `--network none`, 2 CPU, 2 GB, the checkout mounted at `/work` |
+
+Token usage and cost are logged per turn (`implementer turn`) and per call (`agent spend`), stored in
+`llm_calls` and on the ticket, and summarized in the PR body.
+
+```bash
+export OPENAI_API_KEY=sk-...    # your shell only
+gh auth login                   # account that owns the test repo
+docker pull golang:1.26-alpine
+cp .env.live.example .env.live  # set SCM_GH_ALLOWED_REPOS=<you>/alpine-testbed
+make infra-up migrate
+SEED_GITHUB_REPO=<you>/alpine-testbed \
+SEED_GITHUB_REPO_ID=$(gh api repos/<you>/alpine-testbed --jq .id) \
+SEED_FACTORY_YAML=/abs/path/to/alpine-testbed/.alpine/factory.yaml make seed
+make run-api                    # terminal 1
+make run-worker                 # terminal 2: logs "agents: live" with the chosen models
+scripts/send-issue-webhook.sh <you>/alpine-testbed 1   # replays the real issue as a signed webhook
+curl -s localhost:8080/v1/tickets | jq '.items[] | {key,stage,costUsd}'   # wait for pr_open
+```
+
+The test repo needs a `.alpine/factory.yaml` with Go gates, which the `golang` image can run offline.
+A ticket the policy isn't sure about (low confidence, BR4, size L+, unconfirmed bug) waits in
+`needs_human`. Approve it with `curl -X POST -H 'X-CSRF-Token: dev-stub-csrf' -H 'Content-Type: application/json'
+-d '{"action":"approve"}' localhost:8080/v1/tickets/<id>/actions`.
 
 **Other targets:** `make test` (vet + tests + web lint/typecheck), `make test-race`, `make test-db`
 (Postgres integration tests), `make gen` (apigen + TS client from api/openapi.yaml), `make build`.

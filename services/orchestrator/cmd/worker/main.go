@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -38,6 +39,8 @@ import (
 	"github.com/alpine-dev/alpine/services/orchestrator/internal/activities"
 	"github.com/alpine-dev/alpine/services/orchestrator/internal/adapters"
 	"github.com/alpine-dev/alpine/services/orchestrator/internal/workflows"
+	"github.com/alpine-dev/alpine/services/orchestrator/internal/workspace"
+	"github.com/alpine-dev/alpine/services/runner/docker"
 )
 
 func main() {
@@ -111,14 +114,19 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	ws, err := buildWorkspaces(logger, ag)
+	if err != nil {
+		return err
+	}
 	acts := &activities.Activities{
-		Repo:   store,
-		Agents: ag,
-		Gates:  buildGates(logger),
-		SCM:    scm,
-		Slots:  ratelimit.Semaphore{R: rdb},
-		Events: events.Redis{Client: rdb},
-		Logger: logger,
+		Repo:       store,
+		Agents:     ag,
+		Gates:      buildGates(logger),
+		SCM:        scm,
+		Workspaces: ws,
+		Slots:      ratelimit.Semaphore{R: rdb},
+		Events:     events.Redis{Client: rdb},
+		Logger:     logger,
 	}
 
 	base := config.Int("WORKER_AGENT_CONCURRENCY", 8)
@@ -168,8 +176,21 @@ func buildSCM(logger *slog.Logger) (activities.SCM, error) {
 	if mode == "" && config.Bool("GITHUB_LIVE", false) {
 		mode = "github"
 	}
+	if mode == "gh" {
+		var allowed []string
+		for _, r := range strings.Split(config.String("SCM_GH_ALLOWED_REPOS", ""), ",") {
+			if r = strings.TrimSpace(r); r != "" {
+				allowed = append(allowed, r)
+			}
+		}
+		if len(allowed) == 0 {
+			return nil, fmt.Errorf("SCM=gh needs SCM_GH_ALLOWED_REPOS (owner/repo,...): the gh CLI only writes to those repos")
+		}
+		logger.Info("SCM: gh CLI (local login)", "allowed_repos", allowed)
+		return &adapters.GHCLISCM{AllowedRepos: allowed}, nil
+	}
 	if mode != "github" {
-		logger.Info("SCM: stub (no GitHub calls); set SCM=github to use the GitHub App")
+		logger.Info("SCM: stub (no GitHub calls); set SCM=github (GitHub App) or SCM=gh (gh CLI login)")
 		return activities.StubSCM{}, nil
 	}
 	gh, err := config.LoadGitHub()
@@ -241,9 +262,25 @@ func (o orgCapsDefaults) OrgCaps(ctx context.Context, orgID string) (budget.OrgC
 // gateway with all reliability layers. Keys, limits, budgets and usage go through jeff/data's
 // repo/pgrepo.Metering.
 func buildAgents(logger *slog.Logger, metering *pgrepo.Metering, rdb *redis.Client, cfg config.LLM) (agents.Agents, error) {
-	if config.String("ALPINE_AGENT_MODE", "stub") != "llm" {
+	if mode := config.String("ALPINE_AGENT_MODE", "stub"); mode != "llm" && mode != "live" {
 		return agents.Stub{TurnsPerAttempt: config.Int("STUB_TURNS_PER_ATTEMPT", 3)}, nil
 	}
+	// LLM_PROVIDER=openai calls OpenAI directly with OPENAI_API_KEY; the default (litellm) goes
+	// through the LiteLLM proxy at LLM_BASE_URL.
+	if config.String("LLM_PROVIDER", "litellm") == "openai" {
+		cfg.BaseURL = config.String("OPENAI_BASE_URL", "https://api.openai.com/v1")
+		cfg.APIKey = llm.Secret(os.Getenv("OPENAI_API_KEY"))
+		cfg.BYOKInBody = false
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("LLM_PROVIDER=openai needs OPENAI_API_KEY")
+		}
+	}
+	if impl, rev := cfg.Routing[llm.StageImplement], cfg.Routing[llm.StageReview]; len(impl.Models) > 0 && len(rev.Models) > 0 && impl.Models[0] == rev.Models[0] {
+		return nil, fmt.Errorf("the reviewer model (%s) must differ from the implementer model", rev.Models[0])
+	}
+	logger.Info("agents: live", "provider", config.String("LLM_PROVIDER", "litellm"), "base_url", cfg.BaseURL,
+		"triage", cfg.Routing[llm.StageTriage].Models, "refine", cfg.Routing[llm.StageRefine].Models,
+		"implement", cfg.Routing[llm.StageImplement].Models, "review", cfg.Routing[llm.StageReview].Models)
 	pricing, err := llm.LoadPricing(cfg.PricingFile)
 	if err != nil {
 		return nil, err
@@ -276,6 +313,30 @@ func buildAgents(logger *slog.Logger, metering *pgrepo.Metering, rdb *redis.Clie
 		return nil, err
 	}
 	return &agents.LLM{Gateway: gw}, nil
+}
+
+// buildWorkspaces enables the real implementer loop when the agents are live: per-ticket checkouts
+// under WORKSPACE_ROOT and an offline Docker sandbox (IMPLEMENTER_IMAGE) for commands. With
+// SCM=gh, git uses the gh CLI login as its credential helper for clone and push.
+func buildWorkspaces(logger *slog.Logger, ag agents.Agents) (activities.Workspaces, error) {
+	if _, ok := ag.(agents.ToolLoop); !ok {
+		return nil, nil
+	}
+	root := config.String("WORKSPACE_ROOT", filepath.Join(os.TempDir(), "alpine-workspaces"))
+	m := &workspace.Manager{
+		Root:   root,
+		Runner: &docker.Runner{Bin: config.String("RUNNER_DOCKER_BIN", "docker")},
+		Image:  config.String("IMPLEMENTER_IMAGE", "golang:1.26-alpine"),
+		Env: map[string]string{"HOME": "/tmp", "GOCACHE": "/tmp/go-cache", "GOPATH": "/tmp/go", "GOFLAGS": "-mod=mod",
+			"GOPROXY": "off", "GOTOOLCHAIN": "local", "CGO_ENABLED": "0", "CI": "true"},
+		CommandTimeout: config.Duration("IMPLEMENTER_COMMAND_TIMEOUT", 3*time.Minute),
+		Author:         config.String("ALPINE_GIT_AUTHOR", ""),
+	}
+	if config.String("SCM", "") == "gh" {
+		m.GitConfig = []string{"credential.helper=", "credential.helper=!gh auth git-credential"}
+	}
+	logger.Info("implementer: live tool loop", "workspace_root", root, "image", m.Image)
+	return adapters.Workspaces{M: m}, nil
 }
 
 // gatesExtraEnv collects gates-only values from GATES_ENV_<NAME>=value variables into

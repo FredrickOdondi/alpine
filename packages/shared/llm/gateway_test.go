@@ -382,3 +382,10 @@ func TestRetryAfterHTTPDate(t *testing.T) {
 	require.False(t, Retryable(&APIError{StatusCode: 429, Code: "insufficient_quota"}))
 	require.True(t, strings.Contains((&APIError{StatusCode: 500, Message: "x"}).Error(), "500"))
 }
+
+func TestPricingDatedSnapshot(t *testing.T) {
+	c, ok := DefaultPricing.Cost("gpt-4.1-2025-04-14", Usage{InputTokens: 1_000_000})
+	if !ok || c != 2 {
+		t.Fatalf("got %v %v", c, ok)
+	}
+}

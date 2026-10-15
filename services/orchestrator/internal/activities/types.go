@@ -107,6 +107,12 @@ type ImplementResult struct {
 	// Branch is the ticket's work branch, alpine/<ticket_ulid>-<slug>.
 	Branch  string `json:"branch"`
 	Resumed bool   `json:"resumed"` // resumed after a worker crash/retry
+	// RepoDir is the checkout the live implementer committed in (gates and review use it).
+	RepoDir string `json:"repoDir,omitempty"`
+	// Summary is the implementer's own description of the change.
+	Summary string `json:"summary,omitempty"`
+	// StopReason explains a not-ready result (turn_cap, cost_cap, no_change, ...).
+	StopReason string `json:"stopReason,omitempty"`
 }
 
 // GatesInput runs one gate iteration.
@@ -133,6 +139,8 @@ type GatesResult struct {
 type ReviewInput struct {
 	Ref                Ref      `json:"ref"`
 	HeadSHA            string   `json:"headSha"`
+	BaseSHA            string   `json:"baseSha,omitempty"`
+	RepoDir            string   `json:"repoDir,omitempty"`
 	AcceptanceCriteria []string `json:"acceptanceCriteria"`
 	BlastRadius        int      `json:"blastRadius"`
 }

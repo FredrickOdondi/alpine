@@ -89,6 +89,16 @@ func (r *Runner) CreateArgs(spec runner.Spec) []string {
 	if spec.Workdir != "" {
 		args = append(args, "--workdir", spec.Workdir)
 	}
+	if spec.User != "" {
+		args = append(args, "--user", spec.User)
+	}
+	for _, m := range spec.Mounts {
+		v := "type=bind,source=" + m.Source + ",target=" + m.Target
+		if m.ReadOnly {
+			v += ",readonly"
+		}
+		args = append(args, "--mount", v)
+	}
 	for _, k := range sortedKeys(spec.Labels) {
 		args = append(args, "--label", "alpine."+k+"="+spec.Labels[k])
 	}
